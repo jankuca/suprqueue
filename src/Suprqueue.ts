@@ -1,5 +1,7 @@
 import { v4 as uuid } from 'uuid'
 
+type ActualTask<Task> = Task extends object ? Readonly<Task> : Task
+
 interface QueueItem<Task, TaskResult> {
   task: Task
   key: string
@@ -22,16 +24,25 @@ interface QueueOptions<Task> {
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(() => resolve(), ms))
 
 export class Suprqueue<Task, TaskResult> {
-  _processTask: (task: Task) => Promise<TaskResult> | TaskResult
-  _options: QueueOptions<Task>
+  // NOTE: Only non-primitive task types can be made readonly.
+  //   For example `Readonly<string>` results in `Readonly<{ toString: …, …}>` and TS will not even allow
+  //   the processTask function to be used to infer the string task type from `(task: string) => {}`,
+  //   requiring the `Readonly<string>` type instead.
+  _processTask: (task: ActualTask<Task>) => Promise<TaskResult> | TaskResult
+  _options: QueueOptions<ActualTask<Task>>
 
-  _queue: Array<QueueItem<Task, TaskResult>> = []
+  _queue: Array<QueueItem<ActualTask<Task>, TaskResult>> = []
   _running: boolean = false
   _paused: boolean = false
 
   constructor(
-    processTask: (task: Task) => Promise<TaskResult> | TaskResult,
-    options: Partial<QueueOptions<Task>> = {}
+    // WARN: TS cannot constrain the task type to be readonly unless it is specified as a type parameter of the class
+    //   such as `new Suprqueue<MyTask, MyResult>((task) => {})`. Inferring the type from the `processTask` function
+    //   as `new Suprqueue((task: MyTask) => {})` will allow mutation of the task object by the function
+    //   (although other functions in the `options` object will work fine). It is also possible to set the readonly
+    //   flag in the `processTask` function parameter as `(task: Readonly<MyTask>) => {}`.
+    processTask: (task: ActualTask<Task>) => Promise<TaskResult> | TaskResult,
+    options: Partial<QueueOptions<ActualTask<Task>>> = {}
   ) {
     this._processTask = processTask
     this._options = {
@@ -55,7 +66,7 @@ export class Suprqueue<Task, TaskResult> {
     void this._processNextTask()
   }
 
-  async pushTask(incomingTask: Task): Promise<TaskResult> {
+  async pushTask(incomingTask: ActualTask<Task>): Promise<TaskResult> {
     return new Promise((resolve, reject) => {
       const key = this._options.key(incomingTask)
       const incomingItem = { task: incomingTask, key, delayPromise: sleep(0), resolve, reject }
@@ -144,7 +155,7 @@ export class Suprqueue<Task, TaskResult> {
     await this._processNextTask()
   }
 
-  private _queueItemAsRetried(currentItem: QueueItem<Task, TaskResult>) {
+  private _queueItemAsRetried(currentItem: QueueItem<ActualTask<Task>, TaskResult>) {
     const retriedItem = { ...currentItem, delayPromise: sleep(this._options.retryDelay) }
 
     if (this._options.retryBeforeOtherTasks) {
@@ -170,9 +181,9 @@ export class Suprqueue<Task, TaskResult> {
   }
 
   private _mergeQueueItems(
-    existingItem: QueueItem<Task, TaskResult>,
-    incomingItem: QueueItem<Task, TaskResult>
-  ): QueueItem<Task, TaskResult> {
+    existingItem: QueueItem<ActualTask<Task>, TaskResult>,
+    incomingItem: QueueItem<ActualTask<Task>, TaskResult>
+  ): QueueItem<ActualTask<Task>, TaskResult> {
     const mergedTask = incomingItem ? this._options.merge(existingItem.task, incomingItem.task) : existingItem.task
 
     return {
@@ -190,7 +201,7 @@ export class Suprqueue<Task, TaskResult> {
     }
   }
 
-  private async _runPrecheckForTask(task: Task): Promise<void> {
+  private async _runPrecheckForTask(task: ActualTask<Task>): Promise<void> {
     try {
       await this._options.precheck(task)
     } catch (err) {
