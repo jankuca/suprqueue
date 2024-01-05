@@ -1,5 +1,9 @@
 import { v4 as uuid } from 'uuid'
 
+// NOTE: Only non-primitive task types can be made readonly.
+//   For example `Readonly<string>` results in `Readonly<{ toString: …, …}>` and TS will not even allow
+//   the processTask function to be used to infer the string task type from `(task: string) => {}`,
+//   requiring the `Readonly<string>` type instead.
 type ActualTask<Task> = Task extends object ? Readonly<Task> : Task
 
 interface QueueItem<Task, TaskResult> {
@@ -24,10 +28,6 @@ interface QueueOptions<Task> {
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(() => resolve(), ms))
 
 export class Suprqueue<Task, TaskResult> {
-  // NOTE: Only non-primitive task types can be made readonly.
-  //   For example `Readonly<string>` results in `Readonly<{ toString: …, …}>` and TS will not even allow
-  //   the processTask function to be used to infer the string task type from `(task: string) => {}`,
-  //   requiring the `Readonly<string>` type instead.
   _processTask: (task: ActualTask<Task>) => Promise<TaskResult> | TaskResult
   _options: QueueOptions<ActualTask<Task>>
 
