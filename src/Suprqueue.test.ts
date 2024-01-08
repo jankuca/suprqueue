@@ -1418,4 +1418,183 @@ describe('Suprqueue', () => {
       },
     })
   })
+
+  it('should claim it is drained after running a single task with no other tasks queued', () => {
+    return spec({
+      given() {
+        const log: Array<string> = []
+        const queue = new Suprqueue(
+          async (task: string) => {
+            log.push(`start ${task}`)
+            await sleep(10)
+            log.push(`end ${task}`)
+          },
+          {
+            onDrain: () => {
+              log.push('drain')
+            },
+          }
+        )
+
+        return {
+          queue,
+          log,
+        }
+      },
+      async perform({ queue }) {
+        await Promise.all([await queue.pushTask('a'), sleep(10)])
+      },
+      expect({ log }) {
+        expect(log).toEqual(['start a', 'end a', 'drain'])
+      },
+    })
+  })
+
+  it('should claim it is drained after running multiple task in a row when no other tasks are queued', () => {
+    return spec({
+      given() {
+        const log: Array<string> = []
+        const queue = new Suprqueue(
+          async (task: string) => {
+            log.push(`start ${task}`)
+            await sleep(10)
+            log.push(`end ${task}`)
+          },
+          {
+            onDrain: () => {
+              log.push('drain')
+            },
+          }
+        )
+
+        return {
+          queue,
+          log,
+        }
+      },
+      async perform({ queue }) {
+        await Promise.all([queue.pushTask('a'), await queue.pushTask('b'), sleep(10)])
+      },
+      expect({ log }) {
+        expect(log).toEqual(['start a', 'end a', 'start b', 'end b', 'drain'])
+      },
+    })
+  })
+
+  it('should claim it is drained only after also running tasks queued during previous task execution', () => {
+    return spec({
+      given() {
+        let resolveC: (result: any) => void
+        const bPromise = new Promise((resolve) => {
+          resolveC = resolve
+        })
+
+        const log: Array<string> = []
+        const queue = new Suprqueue(
+          async (task: string) => {
+            log.push(`start ${task}`)
+            await sleep(10)
+            if (task === 'a') {
+              resolveC(queue.pushTask('b'))
+            }
+            log.push(`end ${task}`)
+          },
+          {
+            onDrain: () => {
+              log.push('drain')
+            },
+          }
+        )
+
+        return {
+          queue,
+          log,
+          bPromise,
+        }
+      },
+      async perform({ queue, bPromise }) {
+        await Promise.all([queue.pushTask('a'), await bPromise, sleep(10)])
+      },
+      expect({ log }) {
+        expect(log).toEqual(['start a', 'end a', 'start b', 'end b', 'drain'])
+      },
+    })
+  })
+
+  it('should claim it is drained only after failed task retries finish', () => {
+    return spec({
+      given() {
+        const log: Array<string> = []
+        const queue = new Suprqueue(
+          async (task: string) => {
+            log.push(`start ${task}`)
+            await sleep(10)
+            if (!log.includes('error a')) {
+              log.push('error a')
+              throw new Error('error a')
+            }
+            log.push(`end ${task}`)
+          },
+          {
+            retryOnFailure: true,
+            retryDelay: 10,
+            onDrain: () => {
+              log.push('drain')
+            },
+          }
+        )
+
+        return {
+          queue,
+          log,
+        }
+      },
+      async perform({ queue }) {
+        await Promise.all([await queue.pushTask('a'), sleep(10)])
+      },
+      expect({ log }) {
+        expect(log).toEqual(['start a', 'error a', 'start a', 'end a', 'drain'])
+      },
+    })
+  })
+
+  it('should claim it is drained only after failed precheck retries and the actual tasks finish', () => {
+    return spec({
+      given() {
+        const log: Array<string> = []
+        const queue = new Suprqueue(
+          async (task: string) => {
+            log.push(`start ${task}`)
+            await sleep(10)
+            log.push(`end ${task}`)
+          },
+          {
+            retryPrecheckOnFailure: true,
+            precheckRetryDelay: 10,
+            precheck: async (task: string) => {
+              log.push(`precheck ${task}`)
+              if (!log.includes('error precheck a')) {
+                log.push('error precheck a')
+                throw new Error('error precheck a')
+              }
+            },
+            onDrain: () => {
+              log.push('drain')
+            },
+          }
+        )
+
+        return {
+          queue,
+          log,
+        }
+      },
+      async perform({ queue }) {
+        await Promise.all([await queue.pushTask('a'), sleep(10)])
+      },
+      expect({ log }) {
+        expect(log).toEqual(['precheck a', 'error precheck a', 'precheck a', 'start a', 'end a', 'drain'])
+      },
+    })
+  })
 })

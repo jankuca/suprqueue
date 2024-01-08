@@ -18,6 +18,7 @@ interface QueueOptions<Task> {
   key: (task: Task) => string
   merge: (existingTask: Task, incomingTask: Task) => Task
   precheck: (task: Task) => Promise<void> | void
+  onDrain: () => void
   retryOnFailure: boolean
   retryBeforeOtherTasks: boolean
   retryDelay: number
@@ -49,6 +50,7 @@ export class Suprqueue<Task, TaskResult> {
       key: options.key ?? (() => uuid()),
       merge: options.merge ?? ((_existingTask, incomingTask) => incomingTask),
       precheck: options.precheck ?? (() => {}),
+      onDrain: options.onDrain ?? (() => {}),
       retryOnFailure: Boolean(options.retryOnFailure),
       retryBeforeOtherTasks: Boolean(options.retryBeforeOtherTasks),
       retryDelay: options.retryDelay ?? 0,
@@ -109,6 +111,7 @@ export class Suprqueue<Task, TaskResult> {
     const currentItem = this._queue[0]
     if (typeof currentItem === 'undefined') {
       this._running = false
+      this._options.onDrain()
       return
     }
 
