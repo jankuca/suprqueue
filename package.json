@@ -4,7 +4,7 @@
   "description": "Simple in-memory promise-based task queue with support for pausing, merging tasks, or retrying failed tasks",
   "main": "dist/Suprqueue.js",
   "scripts": {
-    "prepublish": "tsc",
+    "prepublish": "tsc -p tsconfig.build.json",
     "test": "jest"
   },
   "repository": {
