@@ -88,6 +88,39 @@ describe('Suprqueue', () => {
     })
   })
 
+  it('should run a task queued during the execution of the previous task after all previously queued task finishes', () => {
+    return spec({
+      given() {
+        let resolveC: (result: any) => void
+        const cPromise = new Promise((resolve) => {
+          resolveC = resolve
+        })
+
+        const log: Array<string> = []
+        const queue = new Suprqueue(async (task: string) => {
+          log.push(`start ${task}`)
+          await sleep(10)
+          if (task === 'a') {
+            resolveC(queue.pushTask('c'))
+          }
+          log.push(`end ${task}`)
+        })
+
+        return {
+          queue,
+          log,
+          cPromise,
+        }
+      },
+      async perform({ queue, cPromise }) {
+        await Promise.all([queue.pushTask('a'), queue.pushTask('b'), cPromise])
+      },
+      expect({ log }) {
+        expect(log).toEqual(['start a', 'end a', 'start b', 'end b', 'start c', 'end c'])
+      },
+    })
+  })
+
   it('should resolve promises of each task with their respective results after finish', () => {
     return spec({
       given() {
