@@ -74,7 +74,7 @@ export class Suprqueue<Task, TaskResult> {
   async pushTask(incomingTask: ActualTask<Task>): Promise<TaskResult> {
     return new Promise((resolve, reject) => {
       const key = this._options.key(incomingTask)
-      const incomingItem = { task: incomingTask, key, delayPromise: sleep(0), retried: false, resolve, reject }
+      const incomingItem = { task: incomingTask, key, delayPromise: null, retried: false, resolve, reject }
 
       const existingKeyItemIndex = this._queue.findIndex((item) => item.key === key)
       const existingKeyItem = existingKeyItemIndex > -1 ? this._queue[existingKeyItemIndex] : null
@@ -118,9 +118,8 @@ export class Suprqueue<Task, TaskResult> {
       return
     }
 
-    // NOTE: We do not want to wait for both the retry and task delays on retries.
-    if (!currentItem.retried && this._options.taskDelay > 0) {
-      await sleep(this._options.taskDelay)
+    if (!currentItem.delayPromise && this._options.taskDelay > 0) {
+      currentItem.delayPromise = sleep(this._options.taskDelay)
     }
 
     try {
@@ -196,11 +195,12 @@ export class Suprqueue<Task, TaskResult> {
     incomingItem: QueueItem<ActualTask<Task>, TaskResult>
   ): QueueItem<ActualTask<Task>, TaskResult> {
     const mergedTask = incomingItem ? this._options.merge(existingItem.task, incomingItem.task) : existingItem.task
+    const delayPromises = [existingItem.delayPromise, incomingItem.delayPromise].filter(Boolean)
 
     return {
       task: mergedTask,
       key: existingItem.key,
-      delayPromise: Promise.all([existingItem.delayPromise, incomingItem.delayPromise]).then(() => {}),
+      delayPromise: delayPromises.length > 0 ? Promise.race(delayPromises).then(() => {}) : null,
       retried: existingItem.retried,
       resolve: (result) => {
         existingItem.resolve(result)

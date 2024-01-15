@@ -1644,7 +1644,7 @@ describe('Suprqueue', () => {
               type: existingTask.type,
               items: [...existingTask.items, ...incomingTask.items],
             }),
-            taskDelay: 10,
+            taskDelay: 20,
           }
         )
 
@@ -1656,14 +1656,53 @@ describe('Suprqueue', () => {
       async perform({ queue, log }) {
         await Promise.all([
           queue.pushTask({ type: 'a', items: ['x'] }),
-          sleep(5).then(() => queue.pushTask({ type: 'a', items: ['y'] })),
-          sleep(9).then(() => {
-            log.push('delay')
+          sleep(10).then(() => queue.pushTask({ type: 'a', items: ['y'] })),
+          sleep(19).then(() => {
+            log.push('delay will elapse')
           }),
         ])
       },
       expect({ log }) {
-        expect(log).toEqual(['delay', 'a:x,y'])
+        expect(log).toEqual(['delay will elapse', 'a:x,y'])
+      },
+    })
+  })
+
+  it('should process tasks queued after the task delay elapses separately from previously merged ones', () => {
+    return spec({
+      given() {
+        const log: Array<string> = []
+        const queue = new Suprqueue(
+          async (task: { type: string; items: Array<string> }) => {
+            log.push(`${task.type}:${task.items}`)
+          },
+          {
+            key: (task) => task.type,
+            merge: (existingTask, incomingTask) => ({
+              type: existingTask.type,
+              items: [...existingTask.items, ...incomingTask.items],
+            }),
+            taskDelay: 20,
+          }
+        )
+
+        return {
+          queue,
+          log,
+        }
+      },
+      async perform({ queue, log }) {
+        await Promise.all([
+          queue.pushTask({ type: 'a', items: ['x'] }),
+          sleep(10).then(() => queue.pushTask({ type: 'a', items: ['y'] })),
+          sleep(25).then(() => {
+            log.push('delay elapsed')
+          }),
+          sleep(30).then(() => queue.pushTask({ type: 'a', items: ['z'] })),
+        ])
+      },
+      expect({ log }) {
+        expect(log).toEqual(['a:x,y', 'delay elapsed', 'a:z'])
       },
     })
   })
