@@ -20,6 +20,7 @@ interface QueueOptions<Task> {
   merge: (existingTask: Task, incomingTask: Task) => Task
   precheck: (task: Task) => Promise<void> | void
   onDrain: () => void
+  mergeConsecutiveOnly: boolean
   taskDelay: number
   retryOnFailure: boolean
   retryBeforeOtherTasks: boolean
@@ -53,6 +54,7 @@ export class Suprqueue<Task, TaskResult> {
       merge: options.merge ?? ((_existingTask, incomingTask) => incomingTask),
       precheck: options.precheck ?? (() => {}),
       onDrain: options.onDrain ?? (() => {}),
+      mergeConsecutiveOnly: Boolean(options.mergeConsecutiveOnly),
       taskDelay: options.taskDelay ?? 0,
       retryOnFailure: Boolean(options.retryOnFailure),
       retryBeforeOtherTasks: Boolean(options.retryBeforeOtherTasks),
@@ -76,8 +78,9 @@ export class Suprqueue<Task, TaskResult> {
       const key = this._options.key(incomingTask)
       const incomingItem = { task: incomingTask, key, delayPromise: null, retried: false, resolve, reject }
 
-      const existingKeyItemIndex = this._queue.findIndex((item) => item.key === key)
-      const existingKeyItem = existingKeyItemIndex > -1 ? this._queue[existingKeyItemIndex] : null
+      const existingKeyItemIndex = this._queue.findLastIndex((item) => item.key === key)
+      const allowedMerge = !this._options.mergeConsecutiveOnly || existingKeyItemIndex === this._queue.length - 1
+      const existingKeyItem = existingKeyItemIndex > -1 && allowedMerge ? this._queue[existingKeyItemIndex] : null
 
       if (existingKeyItemIndex > -1 && existingKeyItem) {
         const mergedItem = this._mergeQueueItems(existingKeyItem, incomingItem)
@@ -170,7 +173,8 @@ export class Suprqueue<Task, TaskResult> {
 
     if (this._options.retryBeforeOtherTasks) {
       const queuedKeyItemIndex = this._queue.findIndex((queuedItem) => queuedItem.key === currentItem.key)
-      const queuedKeyItem = queuedKeyItemIndex > -1 ? this._queue[queuedKeyItemIndex] : null
+      const allowedMerge = !this._options.mergeConsecutiveOnly || queuedKeyItemIndex === 0
+      const queuedKeyItem = queuedKeyItemIndex > -1 && allowedMerge ? this._queue[queuedKeyItemIndex] : null
       if (queuedKeyItemIndex > -1 && queuedKeyItem) {
         const mergedItem = this._mergeQueueItems(retriedItem, queuedKeyItem)
         this._queue.splice(queuedKeyItemIndex, 1)
@@ -180,7 +184,8 @@ export class Suprqueue<Task, TaskResult> {
       }
     } else {
       const queuedKeyItemIndex = this._queue.findLastIndex((queuedItem) => queuedItem.key === currentItem.key)
-      const queuedKeyItem = queuedKeyItemIndex > -1 ? this._queue[queuedKeyItemIndex] : null
+      const allowedMerge = !this._options.mergeConsecutiveOnly || queuedKeyItemIndex === this._queue.length - 1
+      const queuedKeyItem = queuedKeyItemIndex > -1 && allowedMerge ? this._queue[queuedKeyItemIndex] : null
       if (queuedKeyItemIndex > -1 && queuedKeyItem) {
         const mergedItem = this._mergeQueueItems(queuedKeyItem, retriedItem)
         this._queue.splice(queuedKeyItemIndex, 1, mergedItem)
