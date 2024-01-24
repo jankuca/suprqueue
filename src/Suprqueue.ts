@@ -1,4 +1,5 @@
 import { v4 as uuid } from 'uuid'
+import { findLastIndex } from './array-utils'
 
 // NOTE: Only non-primitive task types can be made readonly.
 //   For example `Readonly<string>` results in `Readonly<{ toString: …, …}>` and TS will not even allow
@@ -78,7 +79,7 @@ export class Suprqueue<Task, TaskResult> {
       const key = this._options.key(incomingTask)
       const incomingItem = { task: incomingTask, key, delayPromise: null, retried: false, resolve, reject }
 
-      const existingKeyItemIndex = this._queue.findLastIndex((item) => item.key === key)
+      const existingKeyItemIndex = findLastIndex(this._queue, (item) => item.key === key)
       const allowedMerge = !this._options.mergeConsecutiveOnly || existingKeyItemIndex === this._queue.length - 1
       const existingKeyItem = existingKeyItemIndex > -1 && allowedMerge ? this._queue[existingKeyItemIndex] : null
 
@@ -183,7 +184,7 @@ export class Suprqueue<Task, TaskResult> {
         this._queue.unshift(retriedItem)
       }
     } else {
-      const queuedKeyItemIndex = this._queue.findLastIndex((queuedItem) => queuedItem.key === currentItem.key)
+      const queuedKeyItemIndex = findLastIndex(this._queue, (queuedItem) => queuedItem.key === currentItem.key)
       const allowedMerge = !this._options.mergeConsecutiveOnly || queuedKeyItemIndex === this._queue.length - 1
       const queuedKeyItem = queuedKeyItemIndex > -1 && allowedMerge ? this._queue[queuedKeyItemIndex] : null
       if (queuedKeyItemIndex > -1 && queuedKeyItem) {
