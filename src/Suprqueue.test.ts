@@ -2237,6 +2237,38 @@ describe('Suprqueue', () => {
     })
   })
 
+  it('should wait for the task delay calculated for the task before running the first task', () => {
+    return spec({
+      given() {
+        const log: Array<string> = []
+        const queue = new Suprqueue(
+          async (task: { id: string; delay: number }) => {
+            log.push(task.id)
+          },
+          {
+            taskDelay: (task) => task.delay,
+          }
+        )
+
+        return {
+          queue,
+          log,
+        }
+      },
+      async perform({ queue, log }) {
+        await Promise.all([
+          queue.pushTask({ id: 'a', delay: 10 }),
+          sleep(9).then(() => {
+            log.push('delay')
+          }),
+        ])
+      },
+      expect({ log }) {
+        expect(log).toEqual(['delay', 'a'])
+      },
+    })
+  })
+
   it('should keep merging tasks while waiting for the set task delay', () => {
     return spec({
       given() {
@@ -2264,6 +2296,45 @@ describe('Suprqueue', () => {
         await Promise.all([
           queue.pushTask({ type: 'a', items: ['x'] }),
           sleep(10).then(() => queue.pushTask({ type: 'a', items: ['y'] })),
+          sleep(19).then(() => {
+            log.push('delay will elapse')
+          }),
+        ])
+      },
+      expect({ log }) {
+        expect(log).toEqual(['delay will elapse', 'a:x,y'])
+      },
+    })
+  })
+
+  it('should keep merging tasks while waiting for the task delay calulated for the previous task', () => {
+    return spec({
+      given() {
+        const log: Array<string> = []
+        const queue = new Suprqueue(
+          async (task: { type: string; items: Array<string>; delay: number }) => {
+            log.push(`${task.type}:${task.items}`)
+          },
+          {
+            key: (task) => task.type,
+            merge: (existingTask, incomingTask) => ({
+              type: existingTask.type,
+              items: [...existingTask.items, ...incomingTask.items],
+              delay: existingTask.delay,
+            }),
+            taskDelay: (task) => task.delay,
+          }
+        )
+
+        return {
+          queue,
+          log,
+        }
+      },
+      async perform({ queue, log }) {
+        await Promise.all([
+          queue.pushTask({ type: 'a', items: ['x'], delay: 20 }),
+          sleep(10).then(() => queue.pushTask({ type: 'a', items: ['y'], delay: 0 })),
           sleep(19).then(() => {
             log.push('delay will elapse')
           }),
@@ -2314,6 +2385,45 @@ describe('Suprqueue', () => {
     })
   })
 
+  it('should process tasks queued after the task delay elapses separately from previously merged ones', () => {
+    return spec({
+      given() {
+        const log: Array<string> = []
+        const queue = new Suprqueue(
+          async (task: { type: string; items: Array<string>; delay: number }) => {
+            log.push(`${task.type}:${task.items}`)
+          },
+          {
+            key: (task) => task.type,
+            merge: (existingTask, incomingTask) => ({
+              type: existingTask.type,
+              items: [...existingTask.items, ...incomingTask.items],
+            }),
+            taskDelay: (task) => task.delay,
+          }
+        )
+
+        return {
+          queue,
+          log,
+        }
+      },
+      async perform({ queue, log }) {
+        await Promise.all([
+          queue.pushTask({ type: 'a', items: ['x'], delay: 20 }),
+          sleep(10).then(() => queue.pushTask({ type: 'a', items: ['y'], delay: 0 })),
+          sleep(25).then(() => {
+            log.push('delay elapsed')
+          }),
+          sleep(30).then(() => queue.pushTask({ type: 'a', items: ['z'], delay: 0 })),
+        ])
+      },
+      expect({ log }) {
+        expect(log).toEqual(['a:x,y', 'delay elapsed', 'a:z'])
+      },
+    })
+  })
+
   it('should not wait for the set task delay when retrying a failed task', () => {
     return spec({
       given() {
@@ -2341,6 +2451,47 @@ describe('Suprqueue', () => {
       async perform({ queue, log }) {
         await Promise.all([
           queue.pushTask('a'),
+          sleep(9).then(() => {
+            log.push('delay')
+          }),
+          sleep(15).then(() => {
+            log.push('stop')
+          }),
+        ])
+      },
+      expect({ log }) {
+        expect(log).toEqual(['delay', 'a', 'error a', 'a', 'stop'])
+      },
+    })
+  })
+
+  it('should not wait for the task delay calculated for the task when retrying a failed task', () => {
+    return spec({
+      given() {
+        const log: Array<string> = []
+        const queue = new Suprqueue(
+          async (task: { id: string; delay: number }) => {
+            log.push(`${task.id}`)
+            if (!log.includes(`error ${task.id}`)) {
+              log.push(`error ${task.id}`)
+              throw new Error(`error ${task.id}`)
+            }
+          },
+          {
+            taskDelay: (task) => task.delay,
+            retryOnFailure: true,
+            retryDelay: 0,
+          }
+        )
+
+        return {
+          queue,
+          log,
+        }
+      },
+      async perform({ queue, log }) {
+        await Promise.all([
+          queue.pushTask({ id: 'a', delay: 10 }),
           sleep(9).then(() => {
             log.push('delay')
           }),

@@ -22,7 +22,7 @@ interface QueueOptions<Task> {
   precheck: (task: Task) => Promise<void> | void
   onDrain: () => void
   mergeConsecutiveOnly: boolean
-  taskDelay: number
+  taskDelay: number | ((task: Task) => number)
   retryOnFailure: boolean
   retryBeforeOtherTasks: boolean
   retryDelay: number
@@ -122,8 +122,13 @@ export class Suprqueue<Task, TaskResult> {
       return
     }
 
-    if (!currentItem.delayPromise && this._options.taskDelay > 0) {
-      currentItem.delayPromise = sleep(this._options.taskDelay)
+    const taskDelay =
+      typeof this._options.taskDelay === 'function'
+        ? this._options.taskDelay(currentItem.task)
+        : this._options.taskDelay
+
+    if (!currentItem.delayPromise && taskDelay > 0) {
+      currentItem.delayPromise = sleep(taskDelay)
     }
 
     try {
