@@ -84,8 +84,8 @@ export class Suprqueue<Task, TaskResult> {
       const existingKeyItem = existingKeyItemIndex > -1 && allowedMerge ? this._queue[existingKeyItemIndex] : null
 
       if (existingKeyItemIndex > -1 && existingKeyItem) {
-        const mergedItem = this._mergeQueueItems(existingKeyItem, incomingItem)
-        this._queue.splice(existingKeyItemIndex, 1, mergedItem)
+        const mergedItems = this._mergeQueueItems(existingKeyItem, incomingItem)
+        this._queue.splice(existingKeyItemIndex, 1, ...mergedItems)
       } else {
         this._queue.push(incomingItem)
       }
@@ -177,9 +177,9 @@ export class Suprqueue<Task, TaskResult> {
       const allowedMerge = !this._options.mergeConsecutiveOnly || queuedKeyItemIndex === 0
       const queuedKeyItem = queuedKeyItemIndex > -1 && allowedMerge ? this._queue[queuedKeyItemIndex] : null
       if (queuedKeyItemIndex > -1 && queuedKeyItem) {
-        const mergedItem = this._mergeQueueItems(retriedItem, queuedKeyItem)
+        const mergedItems = this._mergeQueueItems(retriedItem, queuedKeyItem)
         this._queue.splice(queuedKeyItemIndex, 1)
-        this._queue.unshift(mergedItem)
+        this._queue.unshift(...mergedItems)
       } else {
         this._queue.unshift(retriedItem)
       }
@@ -188,8 +188,8 @@ export class Suprqueue<Task, TaskResult> {
       const allowedMerge = !this._options.mergeConsecutiveOnly || queuedKeyItemIndex === this._queue.length - 1
       const queuedKeyItem = queuedKeyItemIndex > -1 && allowedMerge ? this._queue[queuedKeyItemIndex] : null
       if (queuedKeyItemIndex > -1 && queuedKeyItem) {
-        const mergedItem = this._mergeQueueItems(queuedKeyItem, retriedItem)
-        this._queue.splice(queuedKeyItemIndex, 1, mergedItem)
+        const mergedItems = this._mergeQueueItems(queuedKeyItem, retriedItem)
+        this._queue.splice(queuedKeyItemIndex, 1, ...mergedItems)
       } else {
         this._queue.push(retriedItem)
       }
@@ -199,23 +199,29 @@ export class Suprqueue<Task, TaskResult> {
   private _mergeQueueItems(
     existingItem: QueueItem<ActualTask<Task>, TaskResult>,
     incomingItem: QueueItem<ActualTask<Task>, TaskResult>
-  ): QueueItem<ActualTask<Task>, TaskResult> {
-    const mergedTask = incomingItem ? this._options.merge(existingItem.task, incomingItem.task) : existingItem.task
-    const delayPromises = [existingItem.delayPromise, incomingItem.delayPromise].filter(Boolean)
+  ): Array<QueueItem<ActualTask<Task>, TaskResult>> {
+    try {
+      const mergedTask = incomingItem ? this._options.merge(existingItem.task, incomingItem.task) : existingItem.task
+      const delayPromises = [existingItem.delayPromise, incomingItem.delayPromise].filter(Boolean)
 
-    return {
-      task: mergedTask,
-      key: existingItem.key,
-      delayPromise: delayPromises.length > 0 ? Promise.race(delayPromises).then(() => {}) : null,
-      retried: existingItem.retried,
-      resolve: (result) => {
-        existingItem.resolve(result)
-        incomingItem.resolve(result)
-      },
-      reject: (result) => {
-        existingItem.reject(result)
-        incomingItem.reject(result)
-      },
+      return [
+        {
+          task: mergedTask,
+          key: existingItem.key,
+          delayPromise: delayPromises.length > 0 ? Promise.race(delayPromises).then(() => {}) : null,
+          retried: existingItem.retried,
+          resolve: (result) => {
+            existingItem.resolve(result)
+            incomingItem.resolve(result)
+          },
+          reject: (result) => {
+            existingItem.reject(result)
+            incomingItem.reject(result)
+          },
+        },
+      ]
+    } catch (err) {
+      return [existingItem, incomingItem]
     }
   }
 

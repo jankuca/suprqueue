@@ -482,6 +482,40 @@ describe('Suprqueue', () => {
     })
   })
 
+  it('should not merge tasks with the same computed key when the provided merge function throws', () => {
+    return spec({
+      given() {
+        const log: Array<string> = []
+        return {
+          queue: new Suprqueue<{ id: string; items: Array<string> }, void>(
+            async (task) => {
+              log.push(`start ${task.id}:${task.items}`)
+              await sleep(10)
+              log.push(`end ${task.id}:${task.items}`)
+            },
+            {
+              key: (task) => task.id,
+              merge: () => {
+                throw new Error('Failed by the test.')
+              },
+            }
+          ),
+          log,
+        }
+      },
+      async perform({ queue }) {
+        await Promise.all([
+          queue.pushTask({ id: 'a', items: ['x'] }),
+          queue.pushTask({ id: 'a', items: ['y'] }),
+          queue.pushTask({ id: 'b', items: ['z'] }),
+        ])
+      },
+      expect({ log }) {
+        expect(log).toEqual(['start a:x', 'end a:x', 'start a:y', 'end a:y', 'start b:z', 'end b:z'])
+      },
+    })
+  })
+
   it('should merge tasks with the same computed key using the provided merge function when queued with other items in between while being setup to merge all items', () => {
     return spec({
       given() {
@@ -634,6 +668,56 @@ describe('Suprqueue', () => {
     })
   })
 
+  it('should not merge a retried task with the absolute last queued item of the same computed key when the provided merge function fails while being set up to retry after other tasks', () => {
+    return spec({
+      given() {
+        const log: Array<string> = []
+        return {
+          queue: new Suprqueue<{ id: string; items: Array<string> }, void>(
+            async (task) => {
+              log.push(`start ${task.id}:${task.items}`)
+              await sleep(10)
+              if (`${task.id}:${task.items}` === 'a:x' && !log.includes(`error a:x`)) {
+                log.push(`error a:x`)
+                throw new Error(`error a:x`)
+              }
+              log.push(`end ${task.id}:${task.items}`)
+            },
+            {
+              key: (task) => task.id,
+              merge: () => {
+                throw new Error('Failed by the test.')
+              },
+              retryOnFailure: true,
+              retryBeforeOtherTasks: false,
+            }
+          ),
+          log,
+        }
+      },
+      async perform({ queue }) {
+        await Promise.all([
+          queue.pushTask({ id: 'a', items: ['x'] }),
+          await sleep(0), // NOTE: Less than task length.
+          queue.pushTask({ id: 'b', items: ['z'] }),
+          queue.pushTask({ id: 'a', items: ['y'] }),
+        ])
+      },
+      expect({ log }) {
+        expect(log).toEqual([
+          'start a:x',
+          'error a:x',
+          'start b:z',
+          'end b:z',
+          'start a:y',
+          'end a:y',
+          'start a:x',
+          'end a:x',
+        ])
+      },
+    })
+  })
+
   it('should merge a retried task with the last queued item of the same computed key with another item following it using the provided merge function with the retried task being considered newer if set up to retry after other tasks and to merge all items', () => {
     return spec({
       given() {
@@ -673,6 +757,57 @@ describe('Suprqueue', () => {
       },
       expect({ log }) {
         expect(log).toEqual(['start a:x', 'error a:x', 'start a:y,x', 'end a:y,x', 'start b:z', 'end b:z'])
+      },
+    })
+  })
+
+  it('should not merge a retried task with the last queued item of the same computed key with another item following it when the provided merge function fails while set up to retry after other tasks and to merge all items', () => {
+    return spec({
+      given() {
+        const log: Array<string> = []
+        return {
+          queue: new Suprqueue<{ id: string; items: Array<string> }, void>(
+            async (task) => {
+              log.push(`start ${task.id}:${task.items}`)
+              await sleep(10)
+              if (`${task.id}:${task.items}` === 'a:x' && !log.includes(`error a:x`)) {
+                log.push(`error a:x`)
+                throw new Error(`error a:x`)
+              }
+              log.push(`end ${task.id}:${task.items}`)
+            },
+            {
+              key: (task) => task.id,
+              merge: () => {
+                throw new Error('Failed by the test.')
+              },
+              mergeConsecutiveOnly: false,
+              retryOnFailure: true,
+              retryBeforeOtherTasks: false,
+            }
+          ),
+          log,
+        }
+      },
+      async perform({ queue }) {
+        await Promise.all([
+          queue.pushTask({ id: 'a', items: ['x'] }),
+          await sleep(0), // NOTE: Less than task length.
+          queue.pushTask({ id: 'a', items: ['y'] }),
+          queue.pushTask({ id: 'b', items: ['z'] }),
+        ])
+      },
+      expect({ log }) {
+        expect(log).toEqual([
+          'start a:x',
+          'error a:x',
+          'start a:y',
+          'end a:y',
+          'start a:x',
+          'end a:x',
+          'start b:z',
+          'end b:z',
+        ])
       },
     })
   })
@@ -771,6 +906,56 @@ describe('Suprqueue', () => {
     })
   })
 
+  it('should not merge a retried task with an immediately following queued item of the same computed key when the provided merge function fails while being set up to retry before other tasks', () => {
+    return spec({
+      given() {
+        const log: Array<string> = []
+        return {
+          queue: new Suprqueue<{ id: string; items: Array<string> }, void>(
+            async (task) => {
+              log.push(`start ${task.id}:${task.items}`)
+              await sleep(10)
+              if (`${task.id}:${task.items}` === 'a:x' && !log.includes(`error a:x`)) {
+                log.push(`error a:x`)
+                throw new Error(`error a:x`)
+              }
+              log.push(`end ${task.id}:${task.items}`)
+            },
+            {
+              key: (task) => task.id,
+              merge: () => {
+                throw new Error('Failed by the test.')
+              },
+              retryOnFailure: true,
+              retryBeforeOtherTasks: true,
+            }
+          ),
+          log,
+        }
+      },
+      async perform({ queue }) {
+        await Promise.all([
+          queue.pushTask({ id: 'a', items: ['x'] }),
+          await sleep(0), // NOTE: Less than task length.
+          queue.pushTask({ id: 'a', items: ['y'] }),
+          queue.pushTask({ id: 'b', items: ['z'] }),
+        ])
+      },
+      expect({ log }) {
+        expect(log).toEqual([
+          'start a:x',
+          'error a:x',
+          'start a:x',
+          'end a:x',
+          'start a:y',
+          'end a:y',
+          'start b:z',
+          'end b:z',
+        ])
+      },
+    })
+  })
+
   it('should merge a retried task with the next queued item of the same computed key with another item preceding it using the provided merge function with the queued task being considered newer if set up to retry before other tasks and to merge all items', () => {
     return spec({
       given() {
@@ -810,6 +995,57 @@ describe('Suprqueue', () => {
       },
       expect({ log }) {
         expect(log).toEqual(['start a:x', 'error a:x', 'start a:x,y', 'end a:x,y', 'start b:z', 'end b:z'])
+      },
+    })
+  })
+
+  it('should not merge a retried task with the next queued item of the same computed key with another item preceding it when the provided merge function fails while being set up to retry before other tasks and to merge all items', () => {
+    return spec({
+      given() {
+        const log: Array<string> = []
+        return {
+          queue: new Suprqueue<{ id: string; items: Array<string> }, void>(
+            async (task) => {
+              log.push(`start ${task.id}:${task.items}`)
+              await sleep(10)
+              if (`${task.id}:${task.items}` === 'a:x' && !log.includes(`error a:x`)) {
+                log.push(`error a:x`)
+                throw new Error(`error a:x`)
+              }
+              log.push(`end ${task.id}:${task.items}`)
+            },
+            {
+              key: (task) => task.id,
+              merge: () => {
+                throw new Error('Failed by the test.')
+              },
+              mergeConsecutiveOnly: false,
+              retryOnFailure: true,
+              retryBeforeOtherTasks: true,
+            }
+          ),
+          log,
+        }
+      },
+      async perform({ queue }) {
+        await Promise.all([
+          queue.pushTask({ id: 'a', items: ['x'] }),
+          await sleep(0), // NOTE: Less than task length.
+          queue.pushTask({ id: 'b', items: ['z'] }),
+          queue.pushTask({ id: 'a', items: ['y'] }),
+        ])
+      },
+      expect({ log }) {
+        expect(log).toEqual([
+          'start a:x',
+          'error a:x',
+          'start a:x',
+          'end a:x',
+          'start a:y',
+          'end a:y',
+          'start b:z',
+          'end b:z',
+        ])
       },
     })
   })
