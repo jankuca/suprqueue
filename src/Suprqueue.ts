@@ -37,6 +37,7 @@ export class Suprqueue<Task, TaskResult> {
   _options: QueueOptions<ActualTask<Task>>
 
   _queue: Array<QueueItem<ActualTask<Task>, TaskResult>> = []
+  _currentTask: QueueItem<ActualTask<Task>, TaskResult> | null = null
   _running: boolean = false
   _paused: boolean = false
 
@@ -94,6 +95,14 @@ export class Suprqueue<Task, TaskResult> {
     })
   }
 
+  cancelTasks(key: string): void {
+    this._queue = this._queue.filter((item) => item.key !== key)
+
+    if (this._currentTask?.key === key) {
+      this._currentTask = null
+    }
+  }
+
   private async _processQueue() {
     if (this._running) {
       return
@@ -122,6 +131,8 @@ export class Suprqueue<Task, TaskResult> {
       return
     }
 
+    this._currentTask = currentItem
+
     const taskDelay =
       typeof this._options.taskDelay === 'function'
         ? this._options.taskDelay(currentItem.task)
@@ -148,7 +159,7 @@ export class Suprqueue<Task, TaskResult> {
         return
       }
 
-      if (currentItem !== this._queue[0]) {
+      if (currentItem !== this._queue[0] || !this._currentTask) {
         // NOTE: The item was modified (likely merged with an incoming task) while waiting for the retry delay
         //   or running the precheck. We are starting over, running the precheck again for the new task.
         return this._processNextTask()
@@ -161,6 +172,10 @@ export class Suprqueue<Task, TaskResult> {
         const result = await this._processTask.call(null, currentItem.task)
         currentItem.resolve.call(null, result)
       } catch (taskErr) {
+        if (!this._currentTask) {
+          // NOTE: The task was cancelled while running. Eat the error and do not retry.
+          return
+        }
         if (!this._options.retryOnFailure) {
           throw taskErr
         }
@@ -171,6 +186,7 @@ export class Suprqueue<Task, TaskResult> {
       currentItem.reject.call(null, err)
     }
 
+    this._currentTask = null
     await this._processNextTask()
   }
 
