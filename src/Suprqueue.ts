@@ -95,12 +95,18 @@ export class Suprqueue<Task, TaskResult> {
     })
   }
 
-  cancelTasks(key: string): void {
-    this._queue = this._queue.filter((item) => item.key !== key)
+  cancelTasks(key: string): Array<ActualTask<Task>> {
+    const isCanceledItem = (item: QueueItem<ActualTask<Task>, TaskResult>) => item.key === key
 
-    if (this._currentTask?.key === key) {
+    const canceledTasks = this._queue.filter((item) => isCanceledItem(item)).map((item) => item.task)
+    this._queue = this._queue.filter((item) => !isCanceledItem(item))
+
+    if (this._currentTask && isCanceledItem(this._currentTask)) {
+      canceledTasks.unshift(this._currentTask.task)
       this._currentTask = null
     }
+
+    return canceledTasks
   }
 
   private async _processQueue() {
