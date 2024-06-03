@@ -33,11 +33,12 @@ interface QueueOptions<Task> {
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(() => resolve(), ms))
 
 export class Suprqueue<Task, TaskResult> {
-  _processTask: (task: ActualTask<Task>) => Promise<TaskResult> | TaskResult
+  _processTask: (task: ActualTask<Task>, abortSignal: AbortSignal | null) => Promise<TaskResult> | TaskResult
   _options: QueueOptions<ActualTask<Task>>
 
   _queue: Array<QueueItem<ActualTask<Task>, TaskResult>> = []
   _currentTask: QueueItem<ActualTask<Task>, TaskResult> | null = null
+  _currentTaskAbortController: AbortController | null = null
   _running: boolean = false
   _paused: boolean = false
 
@@ -47,7 +48,7 @@ export class Suprqueue<Task, TaskResult> {
     //   as `new Suprqueue((task: MyTask) => {})` will allow mutation of the task object by the function
     //   (although other functions in the `options` object will work fine). It is also possible to set the readonly
     //   flag in the `processTask` function parameter as `(task: Readonly<MyTask>) => {}`.
-    processTask: (task: ActualTask<Task>) => Promise<TaskResult> | TaskResult,
+    processTask: (task: ActualTask<Task>, abortSignal: AbortSignal | null) => Promise<TaskResult> | TaskResult,
     options: Partial<QueueOptions<ActualTask<Task>>> = {}
   ) {
     this._processTask = processTask
@@ -102,8 +103,8 @@ export class Suprqueue<Task, TaskResult> {
     this._queue = this._queue.filter((item) => !isCanceledItem(item))
 
     if (this._currentTask && isCanceledItem(this._currentTask)) {
-      canceledTasks.unshift(this._currentTask.task)
       this._currentTask = null
+      this._currentTaskAbortController?.abort()
     }
 
     return canceledTasks
@@ -175,13 +176,29 @@ export class Suprqueue<Task, TaskResult> {
       this._queue.shift()
 
       try {
-        const result = await this._processTask.call(null, currentItem.task)
+        this._currentTaskAbortController = new AbortController()
+      } catch {
+        // NOTE: AbortController not supported. The task is not cancelable.
+      }
+
+      const abortSignal = this._currentTaskAbortController?.signal ?? null
+
+      try {
+        const result = await this._processTask.call(null, currentItem.task, abortSignal)
+        abortSignal?.throwIfAborted()
         currentItem.resolve.call(null, result)
       } catch (taskErr) {
-        if (!this._currentTask) {
+        this._currentTaskAbortController = null
+
+        if (taskErr instanceof Error && taskErr.name === 'AbortError') {
           // NOTE: The task was cancelled while running. Eat the error and do not retry.
           return
         }
+        if (abortSignal?.aborted) {
+          // NOTE: The task was cancelled while running and it did not handle the abort signal on its own. Do not retry.
+          return
+        }
+
         if (!this._options.retryOnFailure) {
           throw taskErr
         }
