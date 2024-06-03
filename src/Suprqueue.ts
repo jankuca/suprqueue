@@ -194,10 +194,6 @@ export class Suprqueue<Task, TaskResult> {
           // NOTE: The task was cancelled while running. Eat the error and do not retry.
           return
         }
-        if (abortSignal?.aborted) {
-          // NOTE: The task was cancelled while running and it did not handle the abort signal on its own. Do not retry.
-          return
-        }
 
         if (!this._options.retryOnFailure) {
           throw taskErr
