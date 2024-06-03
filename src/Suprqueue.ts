@@ -190,7 +190,7 @@ export class Suprqueue<Task, TaskResult> {
       } catch (taskErr) {
         this._currentTaskAbortController = null
 
-        if (taskErr instanceof Error && taskErr.name === 'AbortError') {
+        if (!this._currentTask || (taskErr instanceof Error && taskErr.name === 'AbortError')) {
           // NOTE: The task was cancelled while running. Eat the error and do not retry.
           return
         }
