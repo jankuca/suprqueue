@@ -2398,6 +2398,7 @@ describe('Suprqueue', () => {
             merge: (existingTask, incomingTask) => ({
               type: existingTask.type,
               items: [...existingTask.items, ...incomingTask.items],
+              delay: incomingTask.delay,
             }),
             taskDelay: (task) => task.delay,
           }
@@ -2410,12 +2411,12 @@ describe('Suprqueue', () => {
       },
       async perform({ queue, log }) {
         await Promise.all([
-          queue.pushTask({ type: 'a', items: ['x'], delay: 20 }),
-          sleep(10).then(() => queue.pushTask({ type: 'a', items: ['y'], delay: 0 })),
-          sleep(25).then(() => {
+          queue.pushTask({ type: 'a', items: ['x'], delay: 40 }),
+          sleep(20).then(() => queue.pushTask({ type: 'a', items: ['y'], delay: 0 })),
+          sleep(50).then(() => {
             log.push('delay elapsed')
           }),
-          sleep(30).then(() => queue.pushTask({ type: 'a', items: ['z'], delay: 0 })),
+          sleep(60).then(() => queue.pushTask({ type: 'a', items: ['z'], delay: 0 })),
         ])
       },
       expect({ log }) {
@@ -2437,7 +2438,7 @@ describe('Suprqueue', () => {
             }
           },
           {
-            taskDelay: 10,
+            taskDelay: 40,
             retryOnFailure: true,
             retryDelay: 0,
           }
@@ -2451,10 +2452,10 @@ describe('Suprqueue', () => {
       async perform({ queue, log }) {
         await Promise.all([
           queue.pushTask('a'),
-          sleep(9).then(() => {
+          sleep(35).then(() => {
             log.push('delay')
           }),
-          sleep(15).then(() => {
+          sleep(60).then(() => {
             log.push('stop')
           }),
         ])
@@ -2491,11 +2492,11 @@ describe('Suprqueue', () => {
       },
       async perform({ queue, log }) {
         await Promise.all([
-          queue.pushTask({ id: 'a', delay: 10 }),
-          sleep(9).then(() => {
+          queue.pushTask({ id: 'a', delay: 40 }),
+          sleep(35).then(() => {
             log.push('delay')
           }),
-          sleep(15).then(() => {
+          sleep(60).then(() => {
             log.push('stop')
           }),
         ])
@@ -2519,9 +2520,9 @@ describe('Suprqueue', () => {
             }
           },
           {
-            taskDelay: 20,
+            taskDelay: 40,
             retryOnFailure: true,
-            retryDelay: 10,
+            retryDelay: 20,
           }
         )
 
@@ -2533,13 +2534,13 @@ describe('Suprqueue', () => {
       async perform({ queue, log }) {
         await Promise.all([
           queue.pushTask('a'),
-          sleep(19).then(() => {
+          sleep(35).then(() => {
             log.push('task delay')
           }),
-          sleep(29).then(() => {
+          sleep(55).then(() => {
             log.push('retry delay')
           }),
-          sleep(39).then(() => {
+          sleep(75).then(() => {
             log.push('second task delay')
           }),
         ])
@@ -2568,9 +2569,9 @@ describe('Suprqueue', () => {
               type: existingTask.type,
               items: [...existingTask.items, ...incomingTask.items],
             }),
-            taskDelay: 20,
+            taskDelay: 40,
             retryOnFailure: true,
-            retryDelay: 10,
+            retryDelay: 20,
           }
         )
 
@@ -2582,17 +2583,17 @@ describe('Suprqueue', () => {
       async perform({ queue, log }) {
         await Promise.all([
           queue.pushTask({ type: 'a', items: ['x'] }),
-          sleep(19).then(() => {
+          sleep(35).then(() => {
             log.push('task delay')
           }),
-          sleep(25).then(() => {
+          sleep(50).then(() => {
             log.push('queue y')
             return queue.pushTask({ type: 'a', items: ['y'] })
           }),
-          sleep(29).then(() => {
+          sleep(55).then(() => {
             log.push('retry delay')
           }),
-          sleep(39).then(() => {
+          sleep(75).then(() => {
             log.push('second task delay')
           }),
         ])
