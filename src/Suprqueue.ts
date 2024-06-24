@@ -195,13 +195,14 @@ export class Suprqueue<Task, TaskResult> {
 
     try {
       const result = await this._handleTask.call(null, currentItem.task, abortSignal)
-      abortSignal?.throwIfAborted()
       currentItem.resolve.call(null, result)
+      abortSignal?.throwIfAborted()
     } catch (taskErr) {
       this._currentTaskAbortController = null
 
       if (!this._currentTask || (taskErr instanceof Error && taskErr.name === 'AbortError')) {
-        // NOTE: The task was cancelled while running. Eat the error and do not retry.
+        // NOTE: The task was cancelled while running. Do not retry.
+        currentItem.reject.call(null, taskErr)
         return
       }
 
