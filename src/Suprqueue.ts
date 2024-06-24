@@ -3,7 +3,7 @@ import { findLastIndex } from './array-utils'
 
 // NOTE: Only non-primitive task types can be made readonly.
 //   For example `Readonly<string>` results in `Readonly<{ toString: …, …}>` and TS will not even allow
-//   the processTask function to be used to infer the string task type from `(task: string) => {}`,
+//   the handleTask function to be used to infer the string task type from `(task: string) => {}`,
 //   requiring the `Readonly<string>` type instead.
 type ActualTask<Task> = Task extends object ? Readonly<Task> : Task
 
@@ -33,7 +33,7 @@ interface QueueOptions<Task> {
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(() => resolve(), ms))
 
 export class Suprqueue<Task, TaskResult> {
-  _processTask: (task: ActualTask<Task>, abortSignal: AbortSignal | null) => Promise<TaskResult> | TaskResult
+  _handleTask: (task: ActualTask<Task>, abortSignal: AbortSignal | null) => Promise<TaskResult> | TaskResult
   _options: QueueOptions<ActualTask<Task>>
 
   _queue: Array<QueueItem<ActualTask<Task>, TaskResult>> = []
@@ -44,14 +44,14 @@ export class Suprqueue<Task, TaskResult> {
 
   constructor(
     // WARN: TS cannot constrain the task type to be readonly unless it is specified as a type parameter of the class
-    //   such as `new Suprqueue<MyTask, MyResult>((task) => {})`. Inferring the type from the `processTask` function
+    //   such as `new Suprqueue<MyTask, MyResult>((task) => {})`. Inferring the type from the `handleTask` function
     //   as `new Suprqueue((task: MyTask) => {})` will allow mutation of the task object by the function
     //   (although other functions in the `options` object will work fine). It is also possible to set the readonly
-    //   flag in the `processTask` function parameter as `(task: Readonly<MyTask>) => {}`.
-    processTask: (task: ActualTask<Task>, abortSignal: AbortSignal | null) => Promise<TaskResult> | TaskResult,
+    //   flag in the `handleTask` function parameter as `(task: Readonly<MyTask>) => {}`.
+    handleTask: (task: ActualTask<Task>, abortSignal: AbortSignal | null) => Promise<TaskResult> | TaskResult,
     options: Partial<QueueOptions<ActualTask<Task>>> = {}
   ) {
-    this._processTask = processTask
+    this._handleTask = handleTask
     this._options = {
       key: options.key ?? (() => uuid()),
       merge: options.merge ?? ((_existingTask, incomingTask) => incomingTask),
@@ -175,38 +175,42 @@ export class Suprqueue<Task, TaskResult> {
       // NOTE: Actual processing of the task starts here. We can now safely remove the task from the queue.
       this._queue.shift()
 
-      try {
-        this._currentTaskAbortController = new AbortController()
-      } catch {
-        // NOTE: AbortController not supported. The task is not cancelable.
-      }
-
-      const abortSignal = this._currentTaskAbortController?.signal ?? null
-
-      try {
-        const result = await this._processTask.call(null, currentItem.task, abortSignal)
-        abortSignal?.throwIfAborted()
-        currentItem.resolve.call(null, result)
-      } catch (taskErr) {
-        this._currentTaskAbortController = null
-
-        if (!this._currentTask || (taskErr instanceof Error && taskErr.name === 'AbortError')) {
-          // NOTE: The task was cancelled while running. Eat the error and do not retry.
-          return
-        }
-
-        if (!this._options.retryOnFailure) {
-          throw taskErr
-        }
-
-        this._queueItemAsRetried(currentItem)
-      }
+      await this._processTask(currentItem)
     } catch (err) {
       currentItem.reject.call(null, err)
     }
 
     this._currentTask = null
     await this._processNextTask()
+  }
+
+  private async _processTask(currentItem: QueueItem<ActualTask<Task>, TaskResult>) {
+    try {
+      this._currentTaskAbortController = new AbortController()
+    } catch {
+      // NOTE: AbortController not supported. The task is not cancelable.
+    }
+
+    const abortSignal = this._currentTaskAbortController?.signal ?? null
+
+    try {
+      const result = await this._handleTask.call(null, currentItem.task, abortSignal)
+      abortSignal?.throwIfAborted()
+      currentItem.resolve.call(null, result)
+    } catch (taskErr) {
+      this._currentTaskAbortController = null
+
+      if (!this._currentTask || (taskErr instanceof Error && taskErr.name === 'AbortError')) {
+        // NOTE: The task was cancelled while running. Eat the error and do not retry.
+        return
+      }
+
+      if (!this._options.retryOnFailure) {
+        throw taskErr
+      }
+
+      this._queueItemAsRetried(currentItem)
+    }
   }
 
   private _queueItemAsRetried(currentItem: QueueItem<ActualTask<Task>, TaskResult>) {
