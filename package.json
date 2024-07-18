@@ -1,6 +1,6 @@
 {
   "name": "suprqueue",
-  "version": "1.6.1",
+  "version": "1.6.2",
   "description": "Simple in-memory promise-based task queue with support for pausing, merging tasks, or retrying failed tasks",
   "main": "dist/Suprqueue.js",
   "scripts": {
