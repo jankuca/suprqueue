@@ -2373,10 +2373,10 @@ describe('Suprqueue', () => {
         await Promise.all([
           queue.pushTask({ type: 'a', items: ['x'] }),
           sleep(10).then(() => queue.pushTask({ type: 'a', items: ['y'] })),
-          sleep(25).then(() => {
+          sleep(30).then(() => {
             log.push('delay elapsed')
           }),
-          sleep(30).then(() => queue.pushTask({ type: 'a', items: ['z'] })),
+          sleep(40).then(() => queue.pushTask({ type: 'a', items: ['z'] })),
         ])
       },
       expect({ log }) {
