@@ -102,33 +102,49 @@ export class Suprqueue<Task, TaskResult> {
     const itemsToCancel = this._queue.filter((item) => shouldCancelItem(item))
     this._queue = this._queue.filter((item) => !shouldCancelItem(item))
 
-    const canceledItems = []
-
-    if (this._currentTask && shouldCancelItem(this._currentTask)) {
-      canceledItems.push(this._currentTask)
-      this._currentTaskAbortController?.abort()
-    }
+    const canceledItems = [...this._cancelRunningItem(key)]
 
     itemsToCancel.forEach((item) => {
-      let abortController
-      try {
-        abortController = new AbortController()
-      } catch {
-        // NOTE: AbortController not supported. Canceling with a regular Error.
-      }
-
+      this._cancelQueuedItem(item)
       canceledItems.push(item)
-      abortController?.abort()
-
-      try {
-        abortController?.signal.throwIfAborted()
-        item.reject.call(null, Object.assign(new Error('Aborted'), { name: 'AbortError' }))
-      } catch (abortError) {
-        item.reject.call(null, abortError)
-      }
     })
 
     return canceledItems.map((item) => item.task)
+  }
+
+  cancelRunningTasks(key: string): Array<ActualTask<Task>> {
+    const canceledItems = this._cancelRunningItem(key)
+    return canceledItems.map((item) => item.task)
+  }
+
+  private _cancelRunningItem(key: string): Array<QueueItem<ActualTask<Task>, TaskResult>> {
+    const shouldCancelItem = (item: QueueItem<ActualTask<Task>, TaskResult>) => item.key === key
+
+    if (!this._currentTask || !shouldCancelItem(this._currentTask)) {
+      return []
+    }
+
+    this._currentTaskAbortController?.abort()
+
+    return [this._currentTask]
+  }
+
+  private _cancelQueuedItem(item: QueueItem<ActualTask<Task>, TaskResult>) {
+    let abortController
+    try {
+      abortController = new AbortController()
+    } catch {
+      // NOTE: AbortController not supported. Canceling with a regular Error.
+    }
+
+    abortController?.abort()
+
+    try {
+      abortController?.signal.throwIfAborted()
+      item.reject.call(null, Object.assign(new Error('Aborted'), { name: 'AbortError' }))
+    } catch (abortError) {
+      item.reject.call(null, abortError)
+    }
   }
 
   private async _processQueue() {

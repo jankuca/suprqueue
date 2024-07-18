@@ -2604,460 +2604,929 @@ describe('Suprqueue', () => {
     })
   })
 
-  it('should fail a task when canceled during its processing', () => {
-    return spec({
-      given() {
-        const queue = new Suprqueue(
-          async (task: string) => {
-            queue.cancelTasks(task)
-          },
-          {
-            key: (task) => task,
-          }
-        )
-
-        return {
-          queue,
-        }
-      },
-      async perform({ queue }) {
-        return { result: (await Promise.allSettled([queue.pushTask('a')]))[0] }
-      },
-      expect({ result }) {
-        expect(result).toEqual({ status: 'rejected', reason: expect.objectContaining({ name: 'AbortError' }) })
-      },
-    })
-  })
-
-  it('should fail a task when canceled before its processing starts', () => {
-    return spec({
-      given() {
-        const queue = new Suprqueue(async (task: string) => {}, {
-          key: (task) => task,
-        })
-
-        return {
-          queue,
-        }
-      },
-      async perform({ queue }) {
-        const taskPromise = queue.pushTask('a')
-        queue.cancelTasks('a')
-        return { result: (await Promise.allSettled([taskPromise]))[0] }
-      },
-      expect({ result }) {
-        expect(result).toEqual({ status: 'rejected', reason: expect.objectContaining({ name: 'AbortError' }) })
-      },
-    })
-  })
-
-  it('should fail all tasks of the specified key that are not processing', () => {
-    return spec({
-      given() {
-        const queue = new Suprqueue(async (task: string) => {}, {
-          key: (task) => task,
-        })
-
-        return {
-          queue,
-        }
-      },
-      async perform({ queue }) {
-        const taskPromises = [queue.pushTask('a'), queue.pushTask('a'), queue.pushTask('a')]
-        queue.cancelTasks('a')
-        return { results: await Promise.allSettled(taskPromises) }
-      },
-      expect({ results }) {
-        expect(results).toEqual([
-          { status: 'rejected', reason: expect.objectContaining({ name: 'AbortError' }) },
-          { status: 'rejected', reason: expect.objectContaining({ name: 'AbortError' }) },
-          { status: 'rejected', reason: expect.objectContaining({ name: 'AbortError' }) },
-        ])
-      },
-    })
-  })
-
-  it('should not fail the currently running task when a task that already finished is canceled', () => {
-    return spec({
-      given() {
-        const queue = new Suprqueue(async (task: string) => task, {
-          key: (task) => task,
-        })
-
-        return {
-          queue,
-        }
-      },
-      async perform({ queue }) {
-        await Promise.allSettled([queue.pushTask('a'), queue.pushTask('b')])
-        const taskAPromise = queue.pushTask('a')
-        const taskBPromise = queue.pushTask('b')
-        await taskAPromise
-        queue.cancelTasks('a')
-        return { result: (await Promise.allSettled([taskBPromise]))[0] }
-      },
-      expect({ result }) {
-        expect(result).toEqual({ status: 'fulfilled', value: 'b' })
-      },
-    })
-  })
-
-  it('should not retry a task canceled during its processing even when configured to retry on failure', () => {
-    return spec({
-      given() {
-        const log: Array<string> = []
-        const queue = new Suprqueue(
-          async (task: string) => {
-            log.push(task)
-            queue.cancelTasks(task)
-          },
-          {
-            key: (task) => task,
-            retryOnFailure: true,
-            onDrain: () => {
-              log.push('drain')
+  describe('cancelation of running and queued tasks', () => {
+    it('should fail a task when canceled during its processing', () => {
+      return spec({
+        given() {
+          const queue = new Suprqueue(
+            async (task: string) => {
+              queue.cancelTasks(task)
             },
+            {
+              key: (task) => task,
+            }
+          )
+
+          return {
+            queue,
           }
-        )
-
-        return {
-          queue,
-          log,
-        }
-      },
-      async perform({ queue }) {
-        const taskPromise = queue.pushTask('a')
-        await Promise.allSettled([taskPromise])
-        // NOTE: wait for drain
-        await sleep(0)
-      },
-      expect({ log }) {
-        expect(log).toEqual(['a', 'drain'])
-      },
+        },
+        async perform({ queue }) {
+          return { result: (await Promise.allSettled([queue.pushTask('a')]))[0] }
+        },
+        expect({ result }) {
+          expect(result).toEqual({ status: 'rejected', reason: expect.objectContaining({ name: 'AbortError' }) })
+        },
+      })
     })
-  })
 
-  it('should provide the task handler with the abort signal for the task', () => {
-    return spec({
-      given() {
-        const log: Array<string> = []
-        const queue = new Suprqueue(
-          async (task: string, signal: AbortSignal | null) => {
-            expect(signal).toBeTruthy()
-            signal?.addEventListener('abort', () => {
-              log.push('aborted')
-            })
-            queue.cancelTasks('a')
-            await sleep(10)
-          },
-          {
+    it('should fail a task when canceled before its processing starts', () => {
+      return spec({
+        given() {
+          const queue = new Suprqueue(async (task: string) => {}, {
             key: (task) => task,
+          })
+
+          return {
+            queue,
           }
-        )
-
-        return {
-          queue,
-          log,
-        }
-      },
-      async perform({ queue, log }) {
-        const taskPromise = queue.pushTask('a')
-        log.push('abort')
-        await Promise.allSettled([taskPromise])
-      },
-      expect({ log }) {
-        expect(log).toEqual(['abort', 'aborted'])
-      },
+        },
+        async perform({ queue }) {
+          const taskPromise = queue.pushTask('a')
+          queue.cancelTasks('a')
+          return { result: (await Promise.allSettled([taskPromise]))[0] }
+        },
+        expect({ result }) {
+          expect(result).toEqual({ status: 'rejected', reason: expect.objectContaining({ name: 'AbortError' }) })
+        },
+      })
     })
-  })
 
-  it('should wait for the currently processing task to finish before rejecting its promise on abortion', () => {
-    return spec({
-      given() {
-        const log: Array<string> = []
-        const queue = new Suprqueue(
-          async (task: string) => {
-            queue.cancelTasks('a')
-            await sleep(10)
-            log.push('done')
-          },
-          {
+    it('should fail all tasks of the specified key that are not processing', () => {
+      return spec({
+        given() {
+          const queue = new Suprqueue(async (task: string) => {}, {
             key: (task) => task,
+          })
+
+          return {
+            queue,
           }
-        )
-
-        return {
-          queue,
-          log,
-        }
-      },
-      async perform({ queue, log }) {
-        const taskPromise = queue.pushTask('a')
-        log.push('abort')
-        await Promise.allSettled([taskPromise])
-      },
-      expect({ log }) {
-        expect(log).toEqual(['abort', 'done'])
-      },
+        },
+        async perform({ queue }) {
+          const taskPromises = [queue.pushTask('a'), queue.pushTask('a'), queue.pushTask('a')]
+          queue.cancelTasks('a')
+          return { results: await Promise.allSettled(taskPromises) }
+        },
+        expect({ results }) {
+          expect(results).toEqual([
+            { status: 'rejected', reason: expect.objectContaining({ name: 'AbortError' }) },
+            { status: 'rejected', reason: expect.objectContaining({ name: 'AbortError' }) },
+            { status: 'rejected', reason: expect.objectContaining({ name: 'AbortError' }) },
+          ])
+        },
+      })
     })
-  })
 
-  it('should not abort the signal for a task when canceled after finishing', () => {
-    return spec({
-      given() {
-        const log: Array<string> = []
-        const queue = new Suprqueue(
-          async (task: string, signal: AbortSignal | null) => {
-            expect(signal).toBeTruthy()
-            signal?.addEventListener('abort', () => {
-              log.push('aborted')
-            })
-            log.push('done')
-          },
-          {
+    it('should not fail the currently running task when a task that already finished is canceled', () => {
+      return spec({
+        given() {
+          const queue = new Suprqueue(async (task: string) => task, {
             key: (task) => task,
+          })
+
+          return {
+            queue,
           }
-        )
-
-        return {
-          queue,
-          log,
-        }
-      },
-      async perform({ queue, log }) {
-        await queue.pushTask('a')
-        log.push('abort')
-        queue.cancelTasks('a')
-        await sleep(10)
-      },
-      expect({ log }) {
-        expect(log).toEqual(['done', 'abort'])
-      },
+        },
+        async perform({ queue }) {
+          const taskAPromise = queue.pushTask('a')
+          const taskBPromise = queue.pushTask('b')
+          await taskAPromise
+          queue.cancelTasks('a')
+          return { result: (await Promise.allSettled([taskBPromise]))[0] }
+        },
+        expect({ result }) {
+          expect(result).toEqual({ status: 'fulfilled', value: 'b' })
+        },
+      })
     })
-  })
 
-  it('should provide the task handler with a fresh abort signal when retrying a failed task', () => {
-    return spec({
-      given() {
-        const log: Array<string> = []
-        let taskCounter = 0
+    it('should not retry a task canceled during its processing even when configured to retry on failure', () => {
+      return spec({
+        given() {
+          const log: Array<string> = []
+          const queue = new Suprqueue(
+            async (task: string) => {
+              log.push(task)
+              queue.cancelTasks(task)
+            },
+            {
+              key: (task) => task,
+              retryOnFailure: true,
+              onDrain: () => {
+                log.push('drain')
+              },
+            }
+          )
 
-        const queue = new Suprqueue(
-          async (task: string, signal: AbortSignal | null) => {
-            const taskNumber = ++taskCounter
-            log.push(`start ${taskNumber}`)
+          return {
+            queue,
+            log,
+          }
+        },
+        async perform({ queue }) {
+          const taskPromise = queue.pushTask('a')
+          await Promise.allSettled([taskPromise])
+          // NOTE: wait for drain
+          await sleep(0)
+        },
+        expect({ log }) {
+          expect(log).toEqual(['a', 'drain'])
+        },
+      })
+    })
 
-            expect(signal).toBeTruthy()
-            signal?.addEventListener('abort', () => {
-              log.push(`aborted ${taskCounter}`)
-            })
-
-            // NOTE: The first attempt fails to trigger a retry, the second attempt cancels itself to test signals.
-            if (taskNumber === 1) {
-              log.push(`fail ${taskNumber}`)
-              throw new Error('Failed')
-            } else {
-              log.push(`abort ${taskNumber}`)
+    it('should provide the task handler with the abort signal for the task', () => {
+      return spec({
+        given() {
+          const log: Array<string> = []
+          const queue = new Suprqueue(
+            async (task: string, signal: AbortSignal | null) => {
+              expect(signal).toBeTruthy()
+              signal?.addEventListener('abort', () => {
+                log.push('aborted')
+              })
               queue.cancelTasks('a')
+              await sleep(10)
+            },
+            {
+              key: (task) => task,
             }
-          },
-          {
-            key: (task) => task,
-            retryOnFailure: true,
+          )
+
+          return {
+            queue,
+            log,
           }
-        )
-
-        return {
-          queue,
-          log,
-        }
-      },
-      async perform({ queue }) {
-        await Promise.allSettled([queue.pushTask('a')])
-      },
-      expect({ log }) {
-        expect(log).toEqual(['start 1', 'fail 1', 'start 2', 'abort 2', 'aborted 2'])
-      },
+        },
+        async perform({ queue, log }) {
+          const taskPromise = queue.pushTask('a')
+          log.push('abort')
+          await Promise.allSettled([taskPromise])
+        },
+        expect({ log }) {
+          expect(log).toEqual(['abort', 'aborted'])
+        },
+      })
     })
-  })
 
-  it('should fail a task when canceled during its processing if its task handler throws the AbortError', () => {
-    return spec({
-      given() {
-        const queue = new Suprqueue(
-          async (task: string, abortSignal: AbortSignal | null) => {
-            expect(abortSignal).toBeTruthy()
-            queue.cancelTasks(task)
-            abortSignal?.throwIfAborted()
-          },
-          {
-            key: (task) => task,
-          }
-        )
-
-        return {
-          queue,
-        }
-      },
-      async perform({ queue }) {
-        return { result: (await Promise.allSettled([queue.pushTask('a')]))[0] }
-      },
-      expect({ result }) {
-        expect(result).toEqual({ status: 'rejected', reason: expect.objectContaining({ name: 'AbortError' }) })
-      },
-    })
-  })
-
-  it('should fail a task when canceled during its processing if its task handler throws a custom error on abortion', () => {
-    return spec({
-      given() {
-        const queue = new Suprqueue(
-          async (task: string, abortSignal: AbortSignal | null) => {
-            expect(abortSignal).toBeTruthy()
-            queue.cancelTasks(task)
-            if (abortSignal?.aborted) {
-              throw new Error('Custom error')
+    it('should wait for the currently processing task to finish before rejecting its promise on abortion', () => {
+      return spec({
+        given() {
+          const log: Array<string> = []
+          const queue = new Suprqueue(
+            async (task: string) => {
+              queue.cancelTasks('a')
+              await sleep(10)
+              log.push('done')
+            },
+            {
+              key: (task) => task,
             }
-          },
-          {
-            key: (task) => task,
+          )
+
+          return {
+            queue,
+            log,
           }
-        )
-
-        return {
-          queue,
-        }
-      },
-      async perform({ queue }) {
-        return { result: (await Promise.allSettled([queue.pushTask('a')]))[0] }
-      },
-      expect({ result }) {
-        expect(result).toEqual({ status: 'rejected', reason: expect.objectContaining({ message: 'Custom error' }) })
-      },
+        },
+        async perform({ queue, log }) {
+          const taskPromise = queue.pushTask('a')
+          log.push('abort')
+          await Promise.allSettled([taskPromise])
+        },
+        expect({ log }) {
+          expect(log).toEqual(['abort', 'done'])
+        },
+      })
     })
-  })
 
-  it('should retry a task canceled during its processing if its task handler throws a custom error on abortion', () => {
-    return spec({
-      given() {
-        const log: Array<string> = []
-        let taskCounter = 0
+    it('should not abort the signal for a task when canceled after finishing', () => {
+      return spec({
+        given() {
+          const log: Array<string> = []
+          const queue = new Suprqueue(
+            async (task: string, signal: AbortSignal | null) => {
+              expect(signal).toBeTruthy()
+              signal?.addEventListener('abort', () => {
+                log.push('aborted')
+              })
+              log.push('done')
+            },
+            {
+              key: (task) => task,
+            }
+          )
 
-        const queue = new Suprqueue(
-          async (task: string, abortSignal: AbortSignal | null) => {
-            const taskNumber = ++taskCounter
-            log.push(`${task} ${taskNumber}`)
+          return {
+            queue,
+            log,
+          }
+        },
+        async perform({ queue, log }) {
+          await queue.pushTask('a')
+          log.push('abort')
+          queue.cancelTasks('a')
+          await sleep(10)
+        },
+        expect({ log }) {
+          expect(log).toEqual(['done', 'abort'])
+        },
+      })
+    })
 
-            // NOTE: Only canceling on the first attempt to avoid an infinite retry loop.
-            if (taskNumber === 1) {
+    it('should provide the task handler with a fresh abort signal when retrying a failed task', () => {
+      return spec({
+        given() {
+          const log: Array<string> = []
+          let taskCounter = 0
+
+          const queue = new Suprqueue(
+            async (task: string, signal: AbortSignal | null) => {
+              const taskNumber = ++taskCounter
+              log.push(`start ${taskNumber}`)
+
+              expect(signal).toBeTruthy()
+              signal?.addEventListener('abort', () => {
+                log.push(`aborted ${taskCounter}`)
+              })
+
+              // NOTE: The first attempt fails to trigger a retry, the second attempt cancels itself to test signals.
+              if (taskNumber === 1) {
+                log.push(`fail ${taskNumber}`)
+                throw new Error('Failed')
+              } else {
+                log.push(`abort ${taskNumber}`)
+                queue.cancelTasks('a')
+              }
+            },
+            {
+              key: (task) => task,
+              retryOnFailure: true,
+            }
+          )
+
+          return {
+            queue,
+            log,
+          }
+        },
+        async perform({ queue }) {
+          await Promise.allSettled([queue.pushTask('a')])
+        },
+        expect({ log }) {
+          expect(log).toEqual(['start 1', 'fail 1', 'start 2', 'abort 2', 'aborted 2'])
+        },
+      })
+    })
+
+    it('should fail a task when canceled during its processing if its task handler throws the AbortError', () => {
+      return spec({
+        given() {
+          const queue = new Suprqueue(
+            async (task: string, abortSignal: AbortSignal | null) => {
+              expect(abortSignal).toBeTruthy()
+              queue.cancelTasks(task)
+              abortSignal?.throwIfAborted()
+            },
+            {
+              key: (task) => task,
+            }
+          )
+
+          return {
+            queue,
+          }
+        },
+        async perform({ queue }) {
+          return { result: (await Promise.allSettled([queue.pushTask('a')]))[0] }
+        },
+        expect({ result }) {
+          expect(result).toEqual({ status: 'rejected', reason: expect.objectContaining({ name: 'AbortError' }) })
+        },
+      })
+    })
+
+    it('should fail a task when canceled during its processing if its task handler throws a custom error on abortion', () => {
+      return spec({
+        given() {
+          const queue = new Suprqueue(
+            async (task: string, abortSignal: AbortSignal | null) => {
               expect(abortSignal).toBeTruthy()
               queue.cancelTasks(task)
               if (abortSignal?.aborted) {
                 throw new Error('Custom error')
               }
+            },
+            {
+              key: (task) => task,
             }
-          },
-          {
-            key: (task) => task,
-            retryOnFailure: true,
+          )
+
+          return {
+            queue,
           }
-        )
-
-        return {
-          queue,
-          log,
-        }
-      },
-      async perform({ queue }) {
-        return { result: (await Promise.allSettled([queue.pushTask('a')]))[0] }
-      },
-      expect({ log }) {
-        expect(log).toEqual(['a 1', 'a 2'])
-      },
+        },
+        async perform({ queue }) {
+          return { result: (await Promise.allSettled([queue.pushTask('a')]))[0] }
+        },
+        expect({ result }) {
+          expect(result).toEqual({ status: 'rejected', reason: expect.objectContaining({ message: 'Custom error' }) })
+        },
+      })
     })
-  })
 
-  it('should return a list of canceled queued tasks', () => {
-    return spec({
-      given() {
-        const queue = new Suprqueue(async (task: { id: number; type: string }) => {}, {
-          key: (task) => task.type,
-          merge: () => {
-            throw new Error('Merging of same-key tasks not allowed')
-          },
-        })
+    it('should retry a task canceled during its processing if its task handler throws a custom error on abortion', () => {
+      return spec({
+        given() {
+          const log: Array<string> = []
+          let taskCounter = 0
 
-        return {
-          queue,
-        }
-      },
-      async perform({ queue }) {
-        const taskPromises = [
-          queue.pushTask({ id: 1, type: 'a' }),
-          queue.pushTask({ id: 2, type: 'b' }),
-          queue.pushTask({ id: 3, type: 'b' }),
-          queue.pushTask({ id: 4, type: 'c' }),
-        ]
+          const queue = new Suprqueue(
+            async (task: string, abortSignal: AbortSignal | null) => {
+              const taskNumber = ++taskCounter
+              log.push(`${task} ${taskNumber}`)
 
-        const canceledTasks = queue.cancelTasks('b')
+              // NOTE: Only canceling on the first attempt to avoid an infinite retry loop.
+              if (taskNumber === 1) {
+                expect(abortSignal).toBeTruthy()
+                queue.cancelTasks(task)
+                if (abortSignal?.aborted) {
+                  throw new Error('Custom error')
+                }
+              }
+            },
+            {
+              key: (task) => task,
+              retryOnFailure: true,
+            }
+          )
 
-        // NOTE: Catch the errors.
-        await Promise.allSettled(taskPromises)
-
-        return { canceledTasks }
-      },
-      expect({ canceledTasks }) {
-        expect(canceledTasks).toEqual([
-          { id: 2, type: 'b' },
-          { id: 3, type: 'b' },
-        ])
-      },
+          return {
+            queue,
+            log,
+          }
+        },
+        async perform({ queue }) {
+          return { result: (await Promise.allSettled([queue.pushTask('a')]))[0] }
+        },
+        expect({ log }) {
+          expect(log).toEqual(['a 1', 'a 2'])
+        },
+      })
     })
-  })
 
-  it('should return the currently processing item in the list of canceled tasks when it matches the canceled key', () => {
-    return spec({
-      given() {
-        const queue = new Suprqueue(
-          async (task: { id: number; type: string }) => {
-            await sleep(20)
-          },
-          {
+    it('should return a list of canceled queued tasks', () => {
+      return spec({
+        given() {
+          const queue = new Suprqueue(async (task: { id: number; type: string }) => {}, {
             key: (task) => task.type,
             merge: () => {
               throw new Error('Merging of same-key tasks not allowed')
             },
+          })
+
+          return {
+            queue,
           }
-        )
+        },
+        async perform({ queue }) {
+          const taskPromises = [
+            queue.pushTask({ id: 1, type: 'a' }),
+            queue.pushTask({ id: 2, type: 'b' }),
+            queue.pushTask({ id: 3, type: 'b' }),
+            queue.pushTask({ id: 4, type: 'c' }),
+          ]
 
-        return {
-          queue,
-        }
-      },
-      async perform({ queue }) {
-        const taskPromises = [
-          queue.pushTask({ id: 1, type: 'a' }),
-          queue.pushTask({ id: 2, type: 'a' }),
-          queue.pushTask({ id: 3, type: 'a' }),
-          queue.pushTask({ id: 4, type: 'c' }),
-        ]
-        // NOTE: Let the first task start processing.
-        await sleep(0)
+          const canceledTasks = queue.cancelTasks('b')
 
-        const canceledTasks = queue.cancelTasks('a')
+          // NOTE: Catch the errors.
+          await Promise.allSettled(taskPromises)
 
-        // NOTE: Catch the errors.
-        await Promise.allSettled(taskPromises)
+          return { canceledTasks }
+        },
+        expect({ canceledTasks }) {
+          expect(canceledTasks).toEqual([
+            { id: 2, type: 'b' },
+            { id: 3, type: 'b' },
+          ])
+        },
+      })
+    })
 
-        return { canceledTasks }
-      },
-      expect({ canceledTasks }) {
-        expect(canceledTasks).toEqual([
-          { id: 1, type: 'a' },
-          { id: 2, type: 'a' },
-          { id: 3, type: 'a' },
-        ])
-      },
+    it('should return the currently processing item in the list of canceled tasks when it matches the canceled key', () => {
+      return spec({
+        given() {
+          const queue = new Suprqueue(
+            async (task: { id: number; type: string }) => {
+              await sleep(20)
+            },
+            {
+              key: (task) => task.type,
+              merge: () => {
+                throw new Error('Merging of same-key tasks not allowed')
+              },
+            }
+          )
+
+          return {
+            queue,
+          }
+        },
+        async perform({ queue }) {
+          const taskPromises = [
+            queue.pushTask({ id: 1, type: 'a' }),
+            queue.pushTask({ id: 2, type: 'a' }),
+            queue.pushTask({ id: 3, type: 'a' }),
+            queue.pushTask({ id: 4, type: 'c' }),
+          ]
+          // NOTE: Let the first task start processing.
+          await sleep(0)
+
+          const canceledTasks = queue.cancelTasks('a')
+
+          // NOTE: Catch the errors.
+          await Promise.allSettled(taskPromises)
+
+          return { canceledTasks }
+        },
+        expect({ canceledTasks }) {
+          expect(canceledTasks).toEqual([
+            { id: 1, type: 'a' },
+            { id: 2, type: 'a' },
+            { id: 3, type: 'a' },
+          ])
+        },
+      })
+    })
+  })
+
+  describe('cancelation of the running task', () => {
+    it('should fail the currently processing task when it matches the canceled key', () => {
+      return spec({
+        given() {
+          const queue = new Suprqueue(
+            async (task: string) => {
+              queue.cancelRunningTasks(task)
+            },
+            {
+              key: (task) => task,
+            }
+          )
+
+          return {
+            queue,
+          }
+        },
+        async perform({ queue }) {
+          return { result: (await Promise.allSettled([queue.pushTask('a')]))[0] }
+        },
+        expect({ result }) {
+          expect(result).toEqual({ status: 'rejected', reason: expect.objectContaining({ name: 'AbortError' }) })
+        },
+      })
+    })
+
+    it('should not fail the currently processing task when it does not the canceled key', () => {
+      return spec({
+        given() {
+          const queue = new Suprqueue(
+            async (task: string) => {
+              queue.cancelRunningTasks(`not ${task}`)
+            },
+            {
+              key: (task) => task,
+            }
+          )
+
+          return {
+            queue,
+          }
+        },
+        async perform({ queue }) {
+          return { result: (await Promise.allSettled([queue.pushTask('a')]))[0] }
+        },
+        expect({ result }) {
+          expect(result.status).not.toEqual('rejected')
+        },
+      })
+    })
+
+    it('should not fail a task when canceled before its processing starts', () => {
+      return spec({
+        given() {
+          const queue = new Suprqueue(async (task: string) => {}, {
+            key: (task) => task,
+          })
+
+          return {
+            queue,
+          }
+        },
+        async perform({ queue }) {
+          const taskPromise = queue.pushTask('a')
+          queue.cancelRunningTasks('a')
+          return { result: (await Promise.allSettled([taskPromise]))[0] }
+        },
+        expect({ result }) {
+          expect(result.status).not.toEqual('rejected')
+        },
+      })
+    })
+
+    it('should process a task when canceled before its processing starts', () => {
+      return spec({
+        given() {
+          const queue = new Suprqueue(
+            async (task: string) => {
+              return 'done' as const
+            },
+            {
+              key: (task) => task,
+            }
+          )
+
+          return {
+            queue,
+          }
+        },
+        async perform({ queue }) {
+          const taskPromise = queue.pushTask('a')
+          queue.cancelRunningTasks('a')
+          return { result: (await Promise.allSettled([taskPromise]))[0] }
+        },
+        expect({ result }) {
+          expect(result).toEqual({ status: 'fulfilled', value: 'done' })
+        },
+      })
+    })
+
+    it('should not fail the currently running task when a task that already finished is canceled', () => {
+      return spec({
+        given() {
+          const queue = new Suprqueue(async (task: string) => task, {
+            key: (task) => task,
+          })
+
+          return {
+            queue,
+          }
+        },
+        async perform({ queue }) {
+          const taskAPromise = queue.pushTask('a')
+          const taskBPromise = queue.pushTask('b')
+          await taskAPromise
+          queue.cancelRunningTasks('a')
+          return { result: (await Promise.allSettled([taskBPromise]))[0] }
+        },
+        expect({ result }) {
+          expect(result).toEqual({ status: 'fulfilled', value: 'b' })
+        },
+      })
+    })
+
+    it('should not retry a task canceled during its processing even when configured to retry on failure', () => {
+      return spec({
+        given() {
+          const log: Array<string> = []
+          const queue = new Suprqueue(
+            async (task: string) => {
+              log.push(task)
+              queue.cancelRunningTasks(task)
+            },
+            {
+              key: (task) => task,
+              retryOnFailure: true,
+              onDrain: () => {
+                log.push('drain')
+              },
+            }
+          )
+
+          return {
+            queue,
+            log,
+          }
+        },
+        async perform({ queue }) {
+          const taskPromise = queue.pushTask('a')
+          await Promise.allSettled([taskPromise])
+          // NOTE: wait for drain
+          await sleep(0)
+        },
+        expect({ log }) {
+          expect(log).toEqual(['a', 'drain'])
+        },
+      })
+    })
+
+    it('should provide the task handler with the abort signal for the task', () => {
+      return spec({
+        given() {
+          const log: Array<string> = []
+          const queue = new Suprqueue(
+            async (task: string, signal: AbortSignal | null) => {
+              expect(signal).toBeTruthy()
+              signal?.addEventListener('abort', () => {
+                log.push('aborted')
+              })
+              queue.cancelRunningTasks('a')
+              await sleep(10)
+            },
+            {
+              key: (task) => task,
+            }
+          )
+
+          return {
+            queue,
+            log,
+          }
+        },
+        async perform({ queue, log }) {
+          const taskPromise = queue.pushTask('a')
+          log.push('abort')
+          await Promise.allSettled([taskPromise])
+        },
+        expect({ log }) {
+          expect(log).toEqual(['abort', 'aborted'])
+        },
+      })
+    })
+
+    it('should wait for the currently processing task to finish before rejecting its promise on abortion', () => {
+      return spec({
+        given() {
+          const log: Array<string> = []
+          const queue = new Suprqueue(
+            async (task: string) => {
+              queue.cancelRunningTasks('a')
+              await sleep(10)
+              log.push('done')
+            },
+            {
+              key: (task) => task,
+            }
+          )
+
+          return {
+            queue,
+            log,
+          }
+        },
+        async perform({ queue, log }) {
+          const taskPromise = queue.pushTask('a')
+          log.push('abort')
+          await Promise.allSettled([taskPromise])
+        },
+        expect({ log }) {
+          expect(log).toEqual(['abort', 'done'])
+        },
+      })
+    })
+
+    it('should not abort the signal for a task when canceled after finishing', () => {
+      return spec({
+        given() {
+          const log: Array<string> = []
+          const queue = new Suprqueue(
+            async (task: string, signal: AbortSignal | null) => {
+              expect(signal).toBeTruthy()
+              signal?.addEventListener('abort', () => {
+                log.push('aborted')
+              })
+              log.push('done')
+            },
+            {
+              key: (task) => task,
+            }
+          )
+
+          return {
+            queue,
+            log,
+          }
+        },
+        async perform({ queue, log }) {
+          await queue.pushTask('a')
+          log.push('abort')
+          queue.cancelRunningTasks('a')
+          await sleep(10)
+        },
+        expect({ log }) {
+          expect(log).toEqual(['done', 'abort'])
+        },
+      })
+    })
+
+    it('should provide the task handler with a fresh abort signal when retrying a failed task', () => {
+      return spec({
+        given() {
+          const log: Array<string> = []
+          let taskCounter = 0
+
+          const queue = new Suprqueue(
+            async (task: string, signal: AbortSignal | null) => {
+              const taskNumber = ++taskCounter
+              log.push(`start ${taskNumber}`)
+
+              expect(signal).toBeTruthy()
+              signal?.addEventListener('abort', () => {
+                log.push(`aborted ${taskCounter}`)
+              })
+
+              // NOTE: The first attempt fails to trigger a retry, the second attempt cancels itself to test signals.
+              if (taskNumber === 1) {
+                log.push(`fail ${taskNumber}`)
+                throw new Error('Failed')
+              } else {
+                log.push(`abort ${taskNumber}`)
+                queue.cancelRunningTasks('a')
+              }
+            },
+            {
+              key: (task) => task,
+              retryOnFailure: true,
+            }
+          )
+
+          return {
+            queue,
+            log,
+          }
+        },
+        async perform({ queue }) {
+          await Promise.allSettled([queue.pushTask('a')])
+        },
+        expect({ log }) {
+          expect(log).toEqual(['start 1', 'fail 1', 'start 2', 'abort 2', 'aborted 2'])
+        },
+      })
+    })
+
+    it('should fail a task when canceled during its processing if its task handler throws the AbortError', () => {
+      return spec({
+        given() {
+          const queue = new Suprqueue(
+            async (task: string, abortSignal: AbortSignal | null) => {
+              expect(abortSignal).toBeTruthy()
+              queue.cancelRunningTasks(task)
+              abortSignal?.throwIfAborted()
+            },
+            {
+              key: (task) => task,
+            }
+          )
+
+          return {
+            queue,
+          }
+        },
+        async perform({ queue }) {
+          return { result: (await Promise.allSettled([queue.pushTask('a')]))[0] }
+        },
+        expect({ result }) {
+          expect(result).toEqual({ status: 'rejected', reason: expect.objectContaining({ name: 'AbortError' }) })
+        },
+      })
+    })
+
+    it('should fail a task when canceled during its processing if its task handler throws a custom error on abortion', () => {
+      return spec({
+        given() {
+          const queue = new Suprqueue(
+            async (task: string, abortSignal: AbortSignal | null) => {
+              expect(abortSignal).toBeTruthy()
+              queue.cancelRunningTasks(task)
+              if (abortSignal?.aborted) {
+                throw new Error('Custom error')
+              }
+            },
+            {
+              key: (task) => task,
+            }
+          )
+
+          return {
+            queue,
+          }
+        },
+        async perform({ queue }) {
+          return { result: (await Promise.allSettled([queue.pushTask('a')]))[0] }
+        },
+        expect({ result }) {
+          expect(result).toEqual({ status: 'rejected', reason: expect.objectContaining({ message: 'Custom error' }) })
+        },
+      })
+    })
+
+    it('should retry a task canceled during its processing if its task handler throws a custom error on abortion', () => {
+      return spec({
+        given() {
+          const log: Array<string> = []
+          let taskCounter = 0
+
+          const queue = new Suprqueue(
+            async (task: string, abortSignal: AbortSignal | null) => {
+              const taskNumber = ++taskCounter
+              log.push(`${task} ${taskNumber}`)
+
+              // NOTE: Only canceling on the first attempt to avoid an infinite retry loop.
+              if (taskNumber === 1) {
+                expect(abortSignal).toBeTruthy()
+                queue.cancelRunningTasks(task)
+                if (abortSignal?.aborted) {
+                  throw new Error('Custom error')
+                }
+              }
+            },
+            {
+              key: (task) => task,
+              retryOnFailure: true,
+            }
+          )
+
+          return {
+            queue,
+            log,
+          }
+        },
+        async perform({ queue }) {
+          return { result: (await Promise.allSettled([queue.pushTask('a')]))[0] }
+        },
+        expect({ log }) {
+          expect(log).toEqual(['a 1', 'a 2'])
+        },
+      })
+    })
+
+    it('should return the currently processing item when it matches the canceled key', () => {
+      return spec({
+        given() {
+          const queue = new Suprqueue(
+            async (task: { id: number; type: string }) => {
+              await sleep(20)
+            },
+            {
+              key: (task) => task.type,
+            }
+          )
+
+          return {
+            queue,
+          }
+        },
+        async perform({ queue }) {
+          const taskPromises = [queue.pushTask({ id: 1, type: 'a' })]
+          // NOTE: Let the first task start processing.
+          await sleep(0)
+
+          const canceledTasks = queue.cancelRunningTasks('a')
+
+          // NOTE: Catch the errors.
+          await Promise.allSettled(taskPromises)
+
+          return { canceledTasks }
+        },
+        expect({ canceledTasks }) {
+          expect(canceledTasks).toEqual([{ id: 1, type: 'a' }])
+        },
+      })
+    })
+
+    it('should not return the currently processing item when it does not match the canceled key', () => {
+      return spec({
+        given() {
+          const queue = new Suprqueue(
+            async (task: { id: number; type: string }) => {
+              await sleep(20)
+            },
+            {
+              key: (task) => task.type,
+            }
+          )
+
+          return {
+            queue,
+          }
+        },
+        async perform({ queue }) {
+          const taskPromises = [queue.pushTask({ id: 1, type: 'a' })]
+          // NOTE: Let the first task start processing.
+          await sleep(0)
+
+          const canceledTasks = queue.cancelRunningTasks('b')
+
+          // NOTE: Catch the errors.
+          await Promise.allSettled(taskPromises)
+
+          return { canceledTasks }
+        },
+        expect({ canceledTasks }) {
+          expect(canceledTasks).toEqual([])
+        },
+      })
     })
   })
 })
