@@ -2749,6 +2749,36 @@ describe('Suprqueue', () => {
             })
             queue.cancelTasks('a')
             await sleep(10)
+          },
+          {
+            key: (task) => task,
+          }
+        )
+
+        return {
+          queue,
+          log,
+        }
+      },
+      async perform({ queue, log }) {
+        const taskPromise = queue.pushTask('a')
+        log.push('abort')
+        await Promise.allSettled([taskPromise])
+      },
+      expect({ log }) {
+        expect(log).toEqual(['abort', 'aborted'])
+      },
+    })
+  })
+
+  it('should wait for the currently processing task to finish before rejecting its promise on abortion', () => {
+    return spec({
+      given() {
+        const log: Array<string> = []
+        const queue = new Suprqueue(
+          async (task: string) => {
+            queue.cancelTasks('a')
+            await sleep(10)
             log.push('done')
           },
           {
@@ -2767,7 +2797,7 @@ describe('Suprqueue', () => {
         await Promise.allSettled([taskPromise])
       },
       expect({ log }) {
-        expect(log).toEqual(['abort', 'aborted', 'done'])
+        expect(log).toEqual(['abort', 'done'])
       },
     })
   })
@@ -2943,6 +2973,90 @@ describe('Suprqueue', () => {
       },
       expect({ log }) {
         expect(log).toEqual(['a 1', 'a 2'])
+      },
+    })
+  })
+
+  it('should return a list of canceled queued tasks', () => {
+    return spec({
+      given() {
+        const queue = new Suprqueue(async (task: { id: number; type: string }) => {}, {
+          key: (task) => task.type,
+          merge: () => {
+            throw new Error('Merging of same-key tasks not allowed')
+          },
+        })
+
+        return {
+          queue,
+        }
+      },
+      async perform({ queue }) {
+        const taskPromises = [
+          queue.pushTask({ id: 1, type: 'a' }),
+          queue.pushTask({ id: 2, type: 'b' }),
+          queue.pushTask({ id: 3, type: 'b' }),
+          queue.pushTask({ id: 4, type: 'c' }),
+        ]
+
+        const canceledTasks = queue.cancelTasks('b')
+
+        // NOTE: Catch the errors.
+        await Promise.allSettled(taskPromises)
+
+        return { canceledTasks }
+      },
+      expect({ canceledTasks }) {
+        expect(canceledTasks).toEqual([
+          { id: 2, type: 'b' },
+          { id: 3, type: 'b' },
+        ])
+      },
+    })
+  })
+
+  it('should return the currently processing item in the list of canceled tasks when it matches the canceled key', () => {
+    return spec({
+      given() {
+        const queue = new Suprqueue(
+          async (task: { id: number; type: string }) => {
+            await sleep(20)
+          },
+          {
+            key: (task) => task.type,
+            merge: () => {
+              throw new Error('Merging of same-key tasks not allowed')
+            },
+          }
+        )
+
+        return {
+          queue,
+        }
+      },
+      async perform({ queue }) {
+        const taskPromises = [
+          queue.pushTask({ id: 1, type: 'a' }),
+          queue.pushTask({ id: 2, type: 'a' }),
+          queue.pushTask({ id: 3, type: 'a' }),
+          queue.pushTask({ id: 4, type: 'c' }),
+        ]
+        // NOTE: Let the first task start processing.
+        await sleep(0)
+
+        const canceledTasks = queue.cancelTasks('a')
+
+        // NOTE: Catch the errors.
+        await Promise.allSettled(taskPromises)
+
+        return { canceledTasks }
+      },
+      expect({ canceledTasks }) {
+        expect(canceledTasks).toEqual([
+          { id: 1, type: 'a' },
+          { id: 2, type: 'a' },
+          { id: 3, type: 'a' },
+        ])
       },
     })
   })

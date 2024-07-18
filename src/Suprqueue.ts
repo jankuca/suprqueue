@@ -97,16 +97,19 @@ export class Suprqueue<Task, TaskResult> {
   }
 
   cancelTasks(key: string): Array<ActualTask<Task>> {
-    const isCanceledItem = (item: QueueItem<ActualTask<Task>, TaskResult>) => item.key === key
+    const shouldCancelItem = (item: QueueItem<ActualTask<Task>, TaskResult>) => item.key === key
 
-    const canceledItems = this._queue.filter((item) => isCanceledItem(item))
-    this._queue = this._queue.filter((item) => !isCanceledItem(item))
+    const itemsToCancel = this._queue.filter((item) => shouldCancelItem(item))
+    this._queue = this._queue.filter((item) => !shouldCancelItem(item))
 
-    if (this._currentTask && isCanceledItem(this._currentTask)) {
+    const canceledItems = []
+
+    if (this._currentTask && shouldCancelItem(this._currentTask)) {
+      canceledItems.push(this._currentTask)
       this._currentTaskAbortController?.abort()
     }
 
-    canceledItems.forEach((item) => {
+    itemsToCancel.forEach((item) => {
       let abortController
       try {
         abortController = new AbortController()
@@ -114,6 +117,7 @@ export class Suprqueue<Task, TaskResult> {
         // NOTE: AbortController not supported. Canceling with a regular Error.
       }
 
+      canceledItems.push(item)
       abortController?.abort()
 
       try {
