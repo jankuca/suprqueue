@@ -96,6 +96,20 @@ export class Suprqueue<Task, TaskResult> {
     })
   }
 
+  getTasks(): Array<{ key: string; task: ActualTask<Task>; retried: boolean; running: boolean }> {
+    const currentTask = this._currentTask
+    const queuedTasks = this._queue.slice()
+
+    const pickTaskInfo = (item: QueueItem<ActualTask<Task>, TaskResult>) => {
+      return { key: item.key, task: item.task, retried: item.retried }
+    }
+
+    return [
+      ...(currentTask ? [{ ...pickTaskInfo(currentTask), running: true }] : []),
+      ...queuedTasks.map((task) => ({ ...pickTaskInfo(task), running: false })),
+    ]
+  }
+
   cancelTasks(key: string): Array<ActualTask<Task>> {
     const shouldCancelItem = (item: QueueItem<ActualTask<Task>, TaskResult>) => item.key === key
 
