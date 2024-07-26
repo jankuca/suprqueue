@@ -16,10 +16,18 @@ interface QueueItem<Task, TaskResult> {
   reject: (error: any) => void
 }
 
+interface TaskState<Task> {
+  key: string
+  task: Task
+  retried: boolean
+  running: boolean
+}
+
 interface QueueOptions<Task> {
   key: (task: Task) => string
   merge: (existingTask: Task, incomingTask: Task) => Task
   precheck: (task: Task) => Promise<void> | void
+  onChange: (items: Array<TaskState<Task>>) => void
   onDrain: () => void
   mergeConsecutiveOnly: boolean
   taskDelay: number | ((task: Task) => number)
@@ -56,6 +64,7 @@ export class Suprqueue<Task, TaskResult> {
       key: options.key ?? (() => uuid()),
       merge: options.merge ?? ((_existingTask, incomingTask) => incomingTask),
       precheck: options.precheck ?? (() => {}),
+      onChange: options.onChange ?? (() => {}),
       onDrain: options.onDrain ?? (() => {}),
       mergeConsecutiveOnly: Boolean(options.mergeConsecutiveOnly),
       taskDelay: options.taskDelay ?? 0,
@@ -91,6 +100,7 @@ export class Suprqueue<Task, TaskResult> {
       } else {
         this._queue.push(incomingItem)
       }
+      this._emitChange()
 
       void this._processQueue()
     })
@@ -123,11 +133,16 @@ export class Suprqueue<Task, TaskResult> {
       canceledItems.push(item)
     })
 
+    this._emitChange()
+
     return canceledItems.map((item) => item.task)
   }
 
   cancelRunningTasks(key: string): Array<ActualTask<Task>> {
     const canceledItems = this._cancelRunningItem(key)
+
+    this._emitChange()
+
     return canceledItems.map((item) => item.task)
   }
 
@@ -225,6 +240,7 @@ export class Suprqueue<Task, TaskResult> {
 
       // NOTE: Actual processing of the task starts here. We can now safely remove the task from the queue.
       this._queue.shift()
+      this._emitChange()
 
       await this._processTask(currentItem)
     } catch (err) {
@@ -232,6 +248,8 @@ export class Suprqueue<Task, TaskResult> {
     }
 
     this._currentTask = null
+    this._emitChange()
+
     await this._processNextTask()
   }
 
@@ -332,5 +350,9 @@ export class Suprqueue<Task, TaskResult> {
       }
       throw err
     }
+  }
+
+  private _emitChange() {
+    this._options.onChange?.(this.getTasks())
   }
 }
