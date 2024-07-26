@@ -105,7 +105,7 @@ export class Suprqueue<Task, TaskResult> {
     }
 
     return [
-      ...(currentTask ? [{ ...pickTaskInfo(currentTask), running: true }] : []),
+      ...(currentTask && currentTask !== queuedTasks[0] ? [{ ...pickTaskInfo(currentTask), running: true }] : []),
       ...queuedTasks.map((task) => ({ ...pickTaskInfo(task), running: false })),
     ]
   }
