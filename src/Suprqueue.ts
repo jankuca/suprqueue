@@ -24,6 +24,7 @@ interface TaskState<Task> {
 }
 
 interface TaskRun {
+  attempt: number
   abortSignal: AbortSignal | null
 }
 
@@ -264,16 +265,19 @@ export class Suprqueue<Task, TaskResult> {
       // NOTE: AbortController not supported. The task is not cancelable.
     }
 
-    const abortSignal = this._currentTaskAbortController?.signal ?? null
+    const run = {
+      attempt: currentItem.attempts + 1,
+      abortSignal: this._currentTaskAbortController?.signal ?? null,
+    }
 
     try {
-      const result = await this._handleTask.call(null, currentItem.task, { abortSignal })
-      abortSignal?.throwIfAborted()
+      const result = await this._handleTask.call(null, currentItem.task, run)
+      run.abortSignal?.throwIfAborted()
       currentItem.resolve.call(null, result)
     } catch (taskErr) {
       this._currentTaskAbortController = null
 
-      const abortErr = abortSignal?.reason
+      const abortErr = run.abortSignal?.reason
       if (abortErr && taskErr === abortErr) {
         // NOTE: The task was cancelled while running. Do not retry.
         currentItem.reject.call(null, taskErr)
@@ -284,14 +288,14 @@ export class Suprqueue<Task, TaskResult> {
         throw taskErr
       }
 
-      this._queueItemAsRetried(currentItem)
+      this._queueItemAsRetriedAfterRun(currentItem, run)
     }
   }
 
-  private _queueItemAsRetried(currentItem: QueueItem<ActualTask<Task>, TaskResult>) {
+  private _queueItemAsRetriedAfterRun(currentItem: QueueItem<ActualTask<Task>, TaskResult>, run: TaskRun) {
     const retriedItem = {
       ...currentItem,
-      attempts: currentItem.attempts + 1,
+      attempts: run.attempt,
       delayPromise: sleep(this._options.retryDelay),
     }
 
