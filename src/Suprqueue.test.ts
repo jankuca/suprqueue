@@ -2742,9 +2742,9 @@ describe('Suprqueue', () => {
         given() {
           const log: Array<string> = []
           const queue = new Suprqueue(
-            async (task: string, signal: AbortSignal | null) => {
-              expect(signal).toBeTruthy()
-              signal?.addEventListener('abort', () => {
+            async (task: string, run: { abortSignal: AbortSignal | null }) => {
+              expect(run.abortSignal).toBeTruthy()
+              run.abortSignal?.addEventListener('abort', () => {
                 log.push('aborted')
               })
               queue.cancelTasks('a')
@@ -2807,9 +2807,9 @@ describe('Suprqueue', () => {
         given() {
           const log: Array<string> = []
           const queue = new Suprqueue(
-            async (task: string, signal: AbortSignal | null) => {
-              expect(signal).toBeTruthy()
-              signal?.addEventListener('abort', () => {
+            async (task: string, run: { abortSignal: AbortSignal | null }) => {
+              expect(run.abortSignal).toBeTruthy()
+              run.abortSignal?.addEventListener('abort', () => {
                 log.push('aborted')
               })
               log.push('done')
@@ -2843,12 +2843,12 @@ describe('Suprqueue', () => {
           let taskCounter = 0
 
           const queue = new Suprqueue(
-            async (task: string, signal: AbortSignal | null) => {
+            async (task: string, run: { abortSignal: AbortSignal | null }) => {
               const taskNumber = ++taskCounter
               log.push(`start ${taskNumber}`)
 
-              expect(signal).toBeTruthy()
-              signal?.addEventListener('abort', () => {
+              expect(run.abortSignal).toBeTruthy()
+              run.abortSignal?.addEventListener('abort', () => {
                 log.push(`aborted ${taskCounter}`)
               })
 
@@ -2885,10 +2885,10 @@ describe('Suprqueue', () => {
       return spec({
         given() {
           const queue = new Suprqueue(
-            async (task: string, abortSignal: AbortSignal | null) => {
-              expect(abortSignal).toBeTruthy()
+            async (task: string, run: { abortSignal: AbortSignal | null }) => {
+              expect(run.abortSignal).toBeTruthy()
               queue.cancelTasks(task)
-              abortSignal?.throwIfAborted()
+              run.abortSignal?.throwIfAborted()
             },
             {
               key: (task) => task,
@@ -2912,10 +2912,10 @@ describe('Suprqueue', () => {
       return spec({
         given() {
           const queue = new Suprqueue(
-            async (task: string, abortSignal: AbortSignal | null) => {
-              expect(abortSignal).toBeTruthy()
+            async (task: string, run: { abortSignal: AbortSignal | null }) => {
+              expect(run.abortSignal).toBeTruthy()
               queue.cancelTasks(task)
-              if (abortSignal?.aborted) {
+              if (run.abortSignal?.aborted) {
                 throw new Error('Custom error')
               }
             },
@@ -2944,15 +2944,15 @@ describe('Suprqueue', () => {
           let taskCounter = 0
 
           const queue = new Suprqueue(
-            async (task: string, abortSignal: AbortSignal | null) => {
+            async (task: string, run: { abortSignal: AbortSignal | null }) => {
               const taskNumber = ++taskCounter
               log.push(`${task} ${taskNumber}`)
 
               // NOTE: Only canceling on the first attempt to avoid an infinite retry loop.
               if (taskNumber === 1) {
-                expect(abortSignal).toBeTruthy()
+                expect(run.abortSignal).toBeTruthy()
                 queue.cancelTasks(task)
-                if (abortSignal?.aborted) {
+                if (run.abortSignal?.aborted) {
                   throw new Error('Custom error')
                 }
               }
@@ -3226,9 +3226,9 @@ describe('Suprqueue', () => {
         given() {
           const log: Array<string> = []
           const queue = new Suprqueue(
-            async (task: string, signal: AbortSignal | null) => {
-              expect(signal).toBeTruthy()
-              signal?.addEventListener('abort', () => {
+            async (task: string, run: { abortSignal: AbortSignal | null }) => {
+              expect(run.abortSignal).toBeTruthy()
+              run.abortSignal?.addEventListener('abort', () => {
                 log.push('aborted')
               })
               queue.cancelRunningTasks('a')
@@ -3291,9 +3291,9 @@ describe('Suprqueue', () => {
         given() {
           const log: Array<string> = []
           const queue = new Suprqueue(
-            async (task: string, signal: AbortSignal | null) => {
-              expect(signal).toBeTruthy()
-              signal?.addEventListener('abort', () => {
+            async (task: string, run: { abortSignal: AbortSignal | null }) => {
+              expect(run.abortSignal).toBeTruthy()
+              run.abortSignal?.addEventListener('abort', () => {
                 log.push('aborted')
               })
               log.push('done')
@@ -3327,12 +3327,12 @@ describe('Suprqueue', () => {
           let taskCounter = 0
 
           const queue = new Suprqueue(
-            async (task: string, signal: AbortSignal | null) => {
+            async (task: string, run: { abortSignal: AbortSignal | null }) => {
               const taskNumber = ++taskCounter
               log.push(`start ${taskNumber}`)
 
-              expect(signal).toBeTruthy()
-              signal?.addEventListener('abort', () => {
+              expect(run.abortSignal).toBeTruthy()
+              run.abortSignal?.addEventListener('abort', () => {
                 log.push(`aborted ${taskCounter}`)
               })
 
@@ -3369,10 +3369,10 @@ describe('Suprqueue', () => {
       return spec({
         given() {
           const queue = new Suprqueue(
-            async (task: string, abortSignal: AbortSignal | null) => {
-              expect(abortSignal).toBeTruthy()
+            async (task: string, run: { abortSignal: AbortSignal | null }) => {
+              expect(run.abortSignal).toBeTruthy()
               queue.cancelRunningTasks(task)
-              abortSignal?.throwIfAborted()
+              run.abortSignal?.throwIfAborted()
             },
             {
               key: (task) => task,
@@ -3396,10 +3396,10 @@ describe('Suprqueue', () => {
       return spec({
         given() {
           const queue = new Suprqueue(
-            async (task: string, abortSignal: AbortSignal | null) => {
-              expect(abortSignal).toBeTruthy()
+            async (task: string, run: { abortSignal: AbortSignal | null }) => {
+              expect(run.abortSignal).toBeTruthy()
               queue.cancelRunningTasks(task)
-              if (abortSignal?.aborted) {
+              if (run.abortSignal?.aborted) {
                 throw new Error('Custom error')
               }
             },
@@ -3428,15 +3428,15 @@ describe('Suprqueue', () => {
           let taskCounter = 0
 
           const queue = new Suprqueue(
-            async (task: string, abortSignal: AbortSignal | null) => {
+            async (task: string, run: { abortSignal: AbortSignal | null }) => {
               const taskNumber = ++taskCounter
               log.push(`${task} ${taskNumber}`)
 
               // NOTE: Only canceling on the first attempt to avoid an infinite retry loop.
               if (taskNumber === 1) {
-                expect(abortSignal).toBeTruthy()
+                expect(run.abortSignal).toBeTruthy()
                 queue.cancelRunningTasks(task)
-                if (abortSignal?.aborted) {
+                if (run.abortSignal?.aborted) {
                   throw new Error('Custom error')
                 }
               }

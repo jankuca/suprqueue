@@ -23,6 +23,10 @@ interface TaskState<Task> {
   running: boolean
 }
 
+interface TaskRun {
+  abortSignal: AbortSignal | null
+}
+
 interface QueueOptions<Task> {
   key: (task: Task) => string
   merge: (existingTask: Task, incomingTask: Task) => Task
@@ -41,7 +45,7 @@ interface QueueOptions<Task> {
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(() => resolve(), ms))
 
 export class Suprqueue<Task, TaskResult> {
-  _handleTask: (task: ActualTask<Task>, abortSignal: AbortSignal | null) => Promise<TaskResult> | TaskResult
+  _handleTask: (task: ActualTask<Task>, run: TaskRun) => Promise<TaskResult> | TaskResult
   _options: QueueOptions<ActualTask<Task>>
 
   _queue: Array<QueueItem<ActualTask<Task>, TaskResult>> = []
@@ -56,7 +60,7 @@ export class Suprqueue<Task, TaskResult> {
     //   as `new Suprqueue((task: MyTask) => {})` will allow mutation of the task object by the function
     //   (although other functions in the `options` object will work fine). It is also possible to set the readonly
     //   flag in the `handleTask` function parameter as `(task: Readonly<MyTask>) => {}`.
-    handleTask: (task: ActualTask<Task>, abortSignal: AbortSignal | null) => Promise<TaskResult> | TaskResult,
+    handleTask: (task: ActualTask<Task>, run: TaskRun) => Promise<TaskResult> | TaskResult,
     options: Partial<QueueOptions<ActualTask<Task>>> = {}
   ) {
     this._handleTask = handleTask
@@ -263,7 +267,7 @@ export class Suprqueue<Task, TaskResult> {
     const abortSignal = this._currentTaskAbortController?.signal ?? null
 
     try {
-      const result = await this._handleTask.call(null, currentItem.task, abortSignal)
+      const result = await this._handleTask.call(null, currentItem.task, { abortSignal })
       abortSignal?.throwIfAborted()
       currentItem.resolve.call(null, result)
     } catch (taskErr) {
