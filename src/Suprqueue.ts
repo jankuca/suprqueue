@@ -11,7 +11,7 @@ interface QueueItem<Task, TaskResult> {
   task: Task
   key: string
   delayPromise: Promise<void> | null
-  retried: boolean
+  attempts: number
   resolve: (result: TaskResult) => void
   reject: (error: any) => void
 }
@@ -19,7 +19,7 @@ interface QueueItem<Task, TaskResult> {
 interface TaskState<Task> {
   key: string
   task: Task
-  retried: boolean
+  attempts: number
   running: boolean
 }
 
@@ -88,7 +88,7 @@ export class Suprqueue<Task, TaskResult> {
   async pushTask(incomingTask: ActualTask<Task>): Promise<TaskResult> {
     return new Promise((resolve, reject) => {
       const key = this._options.key(incomingTask)
-      const incomingItem = { task: incomingTask, key, delayPromise: null, retried: false, resolve, reject }
+      const incomingItem = { task: incomingTask, key, delayPromise: null, attempts: 0, resolve, reject }
 
       const existingKeyItemIndex = findLastIndex(this._queue, (item) => item.key === key)
       const allowedMerge = !this._options.mergeConsecutiveOnly || existingKeyItemIndex === this._queue.length - 1
@@ -106,12 +106,12 @@ export class Suprqueue<Task, TaskResult> {
     })
   }
 
-  getTasks(): Array<{ key: string; task: ActualTask<Task>; retried: boolean; running: boolean }> {
+  getTasks(): Array<{ key: string; task: ActualTask<Task>; attempts: number; running: boolean }> {
     const currentTask = this._currentTask
     const queuedTasks = this._queue.slice()
 
     const pickTaskInfo = (item: QueueItem<ActualTask<Task>, TaskResult>) => {
-      return { key: item.key, task: item.task, retried: item.retried }
+      return { key: item.key, task: item.task, attempts: item.attempts }
     }
 
     return [
@@ -285,7 +285,11 @@ export class Suprqueue<Task, TaskResult> {
   }
 
   private _queueItemAsRetried(currentItem: QueueItem<ActualTask<Task>, TaskResult>) {
-    const retriedItem = { ...currentItem, retried: true, delayPromise: sleep(this._options.retryDelay) }
+    const retriedItem = {
+      ...currentItem,
+      attempts: currentItem.attempts + 1,
+      delayPromise: sleep(this._options.retryDelay),
+    }
 
     if (this._options.retryBeforeOtherTasks) {
       const queuedKeyItemIndex = this._queue.findIndex((queuedItem) => queuedItem.key === currentItem.key)
@@ -324,7 +328,7 @@ export class Suprqueue<Task, TaskResult> {
           task: mergedTask,
           key: existingItem.key,
           delayPromise: delayPromises.length > 0 ? Promise.race(delayPromises).then(() => {}) : null,
-          retried: existingItem.retried,
+          attempts: 0,
           resolve: (result) => {
             existingItem.resolve(result)
             incomingItem.resolve(result)
